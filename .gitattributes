@@ -1,0 +1,11 @@
+# Normalize line endings for everyone, regardless of OS
+* text=auto eol=lf
+
+# Never treat these as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
