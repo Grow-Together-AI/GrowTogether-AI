@@ -2276,38 +2276,12 @@
               </div>
               <h3 data-i18n="results.evidence">Evidence Sources</h3>
             </div>
-            <div class="evidence-list">
-              <div class="evidence-item">
-                <span class="src">World Health Organization</span
-                ><span class="cite" data-i18n="evidence.who"
-                  >Guidelines on Parenting for Early & Middle Childhood</span
-                >
-              </div>
-              <div class="evidence-item">
-                <span class="src">CDC</span
-                ><span class="cite" data-i18n="evidence.cdc"
-                  >Positive Parenting Tips, Ages 6–12</span
-                >
-              </div>
-              <div class="evidence-item">
-                <span class="src">American Academy of Pediatrics</span
-                ><span class="cite" data-i18n="evidence.aap"
-                  >HealthyChildren.org — Middle Childhood</span
-                >
-              </div>
-              <div class="evidence-item">
-                <span class="src">UNICEF</span
-                ><span class="cite" data-i18n="evidence.unicef"
-                  >Parenting Resources</span
-                >
-              </div>
-              <div class="evidence-item">
-                <span class="src">Center on the Developing Child, Harvard</span
-                ><span class="cite" data-i18n="evidence.harvard"
-                  >Serve and Return Interaction</span
-                >
-              </div>
-            </div>
+            <!-- Populated by buildResults() from the case-relevant sources the
+                 personalization engine actually used this session (see
+                 personalization-engine.js: EvidenceSelector). Markup shape
+                 (.evidence-list > .evidence-item > .src/.cite) is unchanged
+                 from the original static version, so styling is identical. -->
+            <div class="evidence-list" id="evidence-list"></div>
           </div>
 
           <div style="text-align: center; margin-top: 30px">
@@ -2449,40 +2423,11 @@
                   </div>
                   <h3 data-i18n="report.b8">8. Evidence Sources</h3>
                 </div>
-                <div class="evidence-list">
-                  <div class="evidence-item">
-                    <span class="src">World Health Organization</span
-                    ><span class="cite" data-i18n="evidence.who"
-                      >Guidelines on Parenting for Early & Middle
-                      Childhood</span
-                    >
-                  </div>
-                  <div class="evidence-item">
-                    <span class="src">CDC</span
-                    ><span class="cite" data-i18n="evidence.cdc"
-                      >Positive Parenting Tips, Ages 6–12</span
-                    >
-                  </div>
-                  <div class="evidence-item">
-                    <span class="src">American Academy of Pediatrics</span
-                    ><span class="cite" data-i18n="evidence.aap"
-                      >HealthyChildren.org — Middle Childhood</span
-                    >
-                  </div>
-                  <div class="evidence-item">
-                    <span class="src">UNICEF</span
-                    ><span class="cite" data-i18n="evidence.unicef"
-                      >Parenting Resources</span
-                    >
-                  </div>
-                  <div class="evidence-item">
-                    <span class="src"
-                      >Center on the Developing Child, Harvard</span
-                    ><span class="cite" data-i18n="evidence.harvard"
-                      >Serve and Return Interaction</span
-                    >
-                  </div>
-                </div>
+                <!-- Populated by buildReport() from planData.evidence, which
+                     comes from the same generatePersonalizedPlan() call used
+                     for the Results view (single source of truth). Markup
+                     shape unchanged from the original static version. -->
+                <div class="evidence-list" id="rep-evidence"></div>
               </div>
               <div class="report-block card res-card" style="margin-bottom: 0">
                 <div class="res-head">
@@ -4308,6 +4253,9 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Deterministic, local, dependency-free personalization engine.
+         No external AI APIs, no external DB, no auth, no persistent storage. -->
+    <script src="assets/personalization-engine.js"></script>
     <script>
       // ================= I18N ENGINE (bilingual EN/AR support, RTL layer) =================
       const I18N = {
@@ -5399,204 +5347,73 @@
           .filter(Boolean)
           .join(". ");
         const concern = concernRaw.trim();
-        const ageBand = age <= 7 ? "6–7" : age <= 9 ? "8–9" : "10–12";
 
-        const bandText = {
-          en: {
-            "6–7":
-              "forming early friendships, building foundational reading and number skills, and learning to follow classroom routines.",
-            "8–9":
-              "strengthening logical thinking, growing more stable friendships, and becoming more independent with schoolwork.",
-            "10–12":
-              "developing abstract thinking, valuing peer belonging more strongly, and taking on greater responsibility at home and school.",
-          },
-          ar: {
-            "6–7":
-              "تكوين صداقات أولى، واكتساب مهارات القراءة والحساب الأساسية، وتعلّم اتباع روتين الصف.",
-            "8–9":
-              "تعزيز التفكير المنطقي، وتكوين صداقات أكثر استقرارًا، واكتساب استقلالية أكبر في الواجبات المدرسية.",
-            "10–12":
-              "تطور التفكير المجرد، وازدياد أهمية الانتماء لمجموعة الأقران، وتحمّل مسؤوليات أكبر في المنزل والمدرسة.",
-          },
-        };
-
-        const summary = isAr
-          ? `في عمر ${age} سنوات (الفئة العمرية ${ageBand})، يكون الأطفال عادة في مرحلة ${bandText.ar[ageBand]} ${interests.length ? "ونظرًا لاهتمام طفلك بـ" + interests.join("، ") + "، " : ""}تركّز هذه الخطة على تعزيز نقاط القوة الحالية مع تقديم دعم لطيف في الجوانب التي أشارت إليها الأسرة.`
-          : `At age ${age} (${ageBand} developmental band), children are typically ${bandText.en[ageBand]} ${interests.length ? "Given an interest in " + interests.join(", ") + ", " : ""}this plan focuses on building on existing strengths while gently supporting the areas your family has flagged.`;
-        document.getElementById("summary-text").textContent = summary;
-
-        // goals
-        const goalBank = [
-          {
-            en: "Spend 10–15 minutes of uninterrupted one-on-one time daily",
-            ar: "خصص من 10 إلى 15 دقيقة يوميًا للوقت الفردي دون مقاطعات",
-          },
-          {
-            en: "Practice naming feelings out loud, at least once a day",
-            ar: "تدرّب على تسمية المشاعر بصوت عالٍ مرة واحدة على الأقل يوميًا",
-          },
-          {
-            en: "Complete one home responsibility independently this week",
-            ar: "أنجز مسؤولية منزلية واحدة بشكل مستقل هذا الأسبوع",
-          },
-          {
-            en: "Read together for 15–20 minutes, four times this week",
-            ar: "اقرآ معًا لمدة 15-20 دقيقة، أربع مرات هذا الأسبوع",
-          },
-          {
-            en: "Use one calm-down strategy (deep breaths, counting) during a strong emotion",
-            ar: "استخدم استراتيجية تهدئة واحدة (التنفس العميق أو العد) عند الشعور بانفعال قوي",
-          },
-        ];
-        let goalIdx = [0, 3];
-        if (/focus|homework|attention|distract/i.test(concern)) goalIdx.push(2);
-        if (
-          /angry|anger|frustrat|tantrum|upset|sad|anxious|worry/i.test(concern)
-        )
-          goalIdx.push(4);
-        if (goalIdx.length < 3) goalIdx.push(1);
-        goalIdx = [...new Set(goalIdx)].slice(0, 4);
-        const goals = goalIdx.map((i) =>
-          isAr ? goalBank[i].ar : goalBank[i].en,
+        // ---- Personalization engine (docs/assets/personalization-engine.js) ----
+        // Single source of truth: this is the ONLY place the plan is generated.
+        // buildReport() below reads exclusively from `planData`, never
+        // recomputing anything, so results and report always agree.
+        const plan = GTPersonalization.generatePersonalizedPlan(
+          { age, gender, interests, strengths, concernText: concern },
+          currentLang,
         );
 
-        document.getElementById("goals-list").innerHTML = goals
+        document.getElementById("summary-text").textContent = plan.summary;
+
+        // goals
+        document.getElementById("goals-list").innerHTML = plan.goals
           .map(
             (g) =>
               `<div class="goal-row"><div class="tick">✓</div><span>${g}</span></div>`,
           )
           .join("");
 
-        // activities
-        const allActivities = [
-          {
-            tag: { en: "Emotional Intelligence", ar: "الذكاء الانفعالي" },
-            title: { en: "Feelings Circle", ar: "دائرة المشاعر" },
-            desc: {
-              en: "Use feeling cards so your child can name and discuss today's emotion.",
-              ar: "استخدم بطاقات المشاعر ليتمكن طفلك من تسمية شعوره اليوم ومناقشته.",
-            },
-            meta: { en: "15 min · Ages 6–12", ar: "15 دقيقة · الأعمار 6-12" },
-            match: /angry|anger|sad|anxious|worry|upset|emotion/i,
-          },
-          {
-            tag: { en: "Cooperation", ar: "التعاون" },
-            title: { en: "Cooperation Tower", ar: "برج التعاون" },
-            desc: {
-              en: "Build the tallest tower together with a sibling or friend, then discuss what worked.",
-              ar: "ابنيا معًا أطول برج ممكن مع أخ أو صديق، ثم ناقشا ما نجح.",
-            },
-            meta: { en: "20 min · Ages 6–12", ar: "20 دقيقة · الأعمار 6-12" },
-            match: /friend|social|share|sibling|cooperat/i,
-          },
-          {
-            tag: { en: "Time Management", ar: "إدارة الوقت" },
-            title: {
-              en: "Weekly Goals Journal",
-              ar: "مفكرة الأهداف الأسبوعية",
-            },
-            desc: {
-              en: "Write three realistic goals for the week and review progress together on the weekend.",
-              ar: "اكتب ثلاثة أهداف واقعية للأسبوع، وراجعا التقدم معًا نهاية الأسبوع.",
-            },
-            meta: { en: "20 min · Ages 8–12", ar: "20 دقيقة · الأعمار 8-12" },
-            match: /focus|homework|organiz|time|routine/i,
-          },
-          {
-            tag: { en: "Reading & Language", ar: "القراءة واللغة" },
-            title: { en: "Reader of the Week", ar: "قارئ الأسبوع" },
-            desc: {
-              en: "Read a short age-appropriate story, then summarize it and share a favorite character.",
-              ar: "اقرأ قصة قصيرة مناسبة لعمره، ثم لخصها معًا وشاركا الشخصية المفضلة.",
-            },
-            meta: {
-              en: "20–30 min · Ages 6–12",
-              ar: "20-30 دقيقة · الأعمار 6-12",
-            },
-            match: /read|book|language/i,
-          },
-          {
-            tag: { en: "Confidence", ar: "الثقة بالنفس" },
-            title: { en: "Achievements Journal", ar: "دفتر الإنجازات" },
-            desc: {
-              en: "Record one accomplishment weekly and set a small new goal for next week.",
-              ar: "سجّل إنجازًا واحدًا أسبوعيًا وحدد هدفًا صغيرًا جديدًا للأسبوع القادم.",
-            },
-            meta: {
-              en: "10 min/week · Ages 6–12",
-              ar: "10 دقائق أسبوعيًا · الأعمار 6-12",
-            },
-            match: /confidence|shy|self-esteem/i,
-          },
-          {
-            tag: { en: "Creativity", ar: "الإبداع" },
-            title: { en: "Creativity Board", ar: "لوحة الإبداع" },
-            desc: {
-              en: 'Cut and arrange pictures or drawings around a theme like "My Dreams" or "My Family".',
-              ar: 'قص ورتب صورًا أو رسومات حول موضوع مثل "أحلامي" أو "عائلتي".',
-            },
-            meta: { en: "30 min · Ages 6–12", ar: "30 دقيقة · الأعمار 6-12" },
-            match: /draw|art|creativ|paint/i,
-          },
-        ];
-        let picked = allActivities.filter(
-          (a) => a.match.test(concern) || a.match.test(interests.join(" ")),
-        );
-        if (picked.length < 3) {
-          allActivities.forEach((a) => {
-            if (picked.length < 3 && !picked.includes(a)) picked.push(a);
-          });
-        }
-        picked = picked.slice(0, 4);
-        document.getElementById("activities-grid").innerHTML = picked
-          .map(
-            (a) =>
-              `<div class="activity"><span class="tag">${isAr ? a.tag.ar : a.tag.en}</span><h4>${isAr ? a.title.ar : a.title.en}</h4><p>${isAr ? a.desc.ar : a.desc.en}</p><div class="meta">${isAr ? a.meta.ar : a.meta.en}</div></div>`,
-          )
+        // activities — up to 4 distinct activities from the 7-day plan, shown
+        // as cards in the same shape as before (tag / title / desc / meta).
+        const seenActivityIds = new Set();
+        const distinctDays = plan.weeklyPlan.filter((d) => {
+          if (seenActivityIds.has(d.activityId)) return false;
+          seenActivityIds.add(d.activityId);
+          return true;
+        });
+        const cardDays = distinctDays.slice(0, 4);
+        document.getElementById("activities-grid").innerHTML = cardDays
+          .map((d) => {
+            const domain = GTPersonalization.NEED_DOMAINS.find((n) => n.id === d.domain);
+            const kbActivity = GTPersonalization.KNOWLEDGE_BASE.find((a) => a.id === d.activityId);
+            const tagLabel = domain ? domain[currentLang] : "";
+            const ageLabel = kbActivity
+              ? (isAr ? `الأعمار ${kbActivity.ageRange[0]}-${kbActivity.ageRange[1]}` : `Ages ${kbActivity.ageRange[0]}–${kbActivity.ageRange[1]}`)
+              : "";
+            const meta = `${d.duration} · ${ageLabel}`;
+            return `<div class="activity"><span class="tag">${tagLabel}</span><h4>${d.title}</h4><p>${d.goal}</p><div class="meta">${meta}</div></div>`;
+          })
           .join("");
-        const pickedForReport = picked.map((a) => ({
-          title: isAr ? a.title.ar : a.title.en,
-          desc: isAr ? a.desc.ar : a.desc.en,
-        }));
+        const pickedForReport = plan.weeklyPlan; // full 7-day detail for the report
 
-        // recommendations
-        const recsBank = [
-          {
-            en: "Get down to your child's eye level and use their name during conversations.",
-            ar: "انزل لمستوى نظر طفلك واستخدم اسمه أثناء الحديث معه.",
-          },
-          {
-            en: "Describe the behavior you notice rather than labeling your child's character.",
-            ar: "صف السلوك الذي تلاحظه بدلًا من وصف شخصية طفلك.",
-          },
-          {
-            en: "Praise effort and persistence, not just results.",
-            ar: "امدح الجهد والمثابرة، وليس النتائج فقط.",
-          },
-          {
-            en: "Keep house rules few, clear, and age-appropriate — and apply them consistently.",
-            ar: "اجعل قواعد المنزل قليلة وواضحة ومناسبة لعمره، وطبّقها بثبات.",
-          },
-          {
-            en: "Protect a daily routine that balances sleep, meals, play, and study.",
-            ar: "حافظ على روتين يومي متوازن بين النوم والوجبات واللعب والمذاكرة.",
-          },
-        ];
-        const recs = recsBank.map((r) => (isAr ? r.ar : r.en));
+        // recommendations (parent guidance)
+        const recs = plan.guidanceTexts;
         document.getElementById("rec-list").innerHTML = recs
           .map((r) => `<li>${r}</li>`)
           .join("");
 
+        // evidence — case-relevant sources selected by EvidenceSelector,
+        // same markup shape (.evidence-list > .evidence-item > .src/.cite)
+        // as the original static version.
+        const renderEvidence = (containerId) => {
+          document.getElementById(containerId).innerHTML = plan.evidence
+            .map(
+              (e) =>
+                `<div class="evidence-item"><span class="src">${e.org}</span><span class="cite">${isAr ? e.ar : e.en}</span></div>`,
+            )
+            .join("");
+        };
+        renderEvidence("evidence-list");
+
         // referral
-        const referralFlags =
-          /speech|stutter|can't focus|cannot focus|severe|constant tantrum|hurt|self-harm|not talking|regress|lost a skill/i;
-        const showReferral = referralFlags.test(concern);
+        const showReferral = plan.showReferral;
         const referralCard = document.getElementById("referral-card");
-        let referralText = "";
+        const referralText = plan.referralText || "";
         if (showReferral) {
-          referralText = isAr
-            ? "بناءً على ما شاركته، قد يكون من المفيد التحدث مع طبيب أطفالك كنقطة انطلاق، إذ يمكنه تنسيق إحالة لمختص (مثل أخصائي النطق واللغة، أو التطور، أو الصحة النفسية) إذا كان تقييم أشمل مفيدًا."
-            : "Based on what you've shared, it may help to speak with your child's pediatrician as a starting point — they can coordinate a referral to a specialist (such as a speech-language, developmental, or mental health professional) if a fuller evaluation would be useful.";
           referralCard.style.display = "block";
           document.getElementById("referral-text").textContent = referralText;
         } else {
@@ -5611,25 +5428,30 @@
           interests: [...interests],
           strengths: [...strengths],
           concern,
-          summary,
-          goals,
+          summary: plan.summary,
+          goals: plan.goals,
           activities: pickedForReport,
           recs,
           referralText,
           showReferral,
+          // Extra fields beyond the original shape — additive only, so any
+          // existing code reading the fields above is unaffected.
+          priorities: plan.priorities,
+          priorityLabels: plan.priorityLabels,
+          evidence: plan.evidence,
+          _explain: plan._explain,
         };
 
         // Propagate the child's name/details across Dashboard, History, and Timeline
+        const topDomain = GTPersonalization.NEED_DOMAINS.find((n) => n.id === plan.priorities[0]);
         activeChild = {
           id: child.id,
           name: childName,
           age: age,
           gender: gender,
           grade: grade,
-          focusEn: picked[0]
-            ? picked[0].tag.en.toLowerCase()
-            : "overall development",
-          focusAr: picked[0] ? picked[0].tag.ar : "النمو الشامل",
+          focusEn: topDomain ? topDomain.en.toLowerCase() : "overall development",
+          focusAr: topDomain ? topDomain.ar : "النمو الشامل",
         };
         refreshChildEverywhere();
       }
@@ -5729,12 +5551,27 @@
         document.getElementById("rep-goals").innerHTML = planData.goals
           .map((g) => `<li>${g}</li>`)
           .join("");
-        document.getElementById("rep-activities").innerHTML =
-          planData.activities
-            .map((a) => `<li><strong>${a.title}</strong> — ${a.desc}</li>`)
-            .join("");
+        // planData.activities is the full 7-day plan (day/title/goal/duration/
+        // difficulty/materials/tip) produced by generatePersonalizedPlan() —
+        // rendered here with the SAME <li> / ul.rec-list markup as before,
+        // just with richer text content per item.
+        document.getElementById("rep-activities").innerHTML = planData.activities
+          .map((a) => {
+            const materialsLabel = isAr ? "الأدوات" : "Materials";
+            const tipLabel = isAr ? "نصيحة" : "Tip";
+            return `<li><strong>${a.day} — ${a.title}</strong> (${a.duration} · ${a.difficulty}) — ${a.goal}. <em>${materialsLabel}:</em> ${a.materials}. <em>${tipLabel}:</em> ${a.tip}</li>`;
+          })
+          .join("");
         document.getElementById("rep-recs").innerHTML = planData.recs
           .map((r) => `<li>${r}</li>`)
+          .join("");
+        // rep-evidence reads from the SAME planData.evidence used in Results —
+        // single source of truth, never recomputed here.
+        document.getElementById("rep-evidence").innerHTML = (planData.evidence || [])
+          .map(
+            (e) =>
+              `<div class="evidence-item"><span class="src">${e.org}</span><span class="cite">${isAr ? e.ar : e.en}</span></div>`,
+          )
           .join("");
         document.getElementById("rep-referral-block").style.display =
           planData.showReferral ? "block" : "none";
