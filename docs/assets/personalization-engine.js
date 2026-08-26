@@ -7,14 +7,16 @@
  *
  * Pipeline (mirrors the required architecture):
  *   Child Profile
- *     -> CaseAnalyzer            (free-text concern -> scored need signals)
+ *     -> CaseAnalyzer            (free-text concern -> scored need + risk signals)
  *     -> DevelopmentalAnalyzer   (age -> developmental band + framing)
  *     -> NeedsPriorityEngine     (signals + age/grade/strengths -> ranked needs)
- *     -> KnowledgeBase           (static, structured activity/guidance/evidence data)
- *     -> PlanSelector            (scored matching -> 7-day plan, NOT random)
+ *     -> SaudiContextLayer       (structural hook for future cultural adaptation —
+ *                                  see "SAUDI CONTEXT LAYER" section; currently a
+ *                                  documented pass-through, no invented content)
+ *     -> EvidenceKnowledgeBase   (structured, provenance-tagged activity/evidence data)
+ *     -> PlanSelector            (scored matching + deterministic progression, NOT random)
  *     -> GuidanceSelector        (ranked needs -> parent guidance categories)
- *     -> EvidenceSelector        (domains actually used -> deduped citations)
- *     -> ReferralEngine          (severity heuristic -> optional soft referral)
+ *     -> ReferralSafetyEngine    (tiered routing heuristic -> optional soft referral)
  *   -> generatePersonalizedPlan() assembles ONE plan object — the single
  *      source of truth consumed by both the results view and the report.
  *
@@ -178,13 +180,28 @@
       .filter((s) => s.score > 0)
       .sort((a, b) => b.score - a.score);
 
-    // Explicit urgent-language overlay — independent of domain scoring, used
-    // only by the ReferralEngine, never surfaced as a diagnosis.
-    const urgentEn = ["severe", "constant tantrum", "hurt himself", "hurt herself", "self-harm", "not talking at all", "lost a skill", "regressed"];
-    const urgentAr = ["شديد", "يؤذي نفسه", "لا يتحدث إطلاقًا", "فقد مهارة", "تراجع في النمو"];
-    const urgentFlag = urgentEn.some((k) => text.includes(k)) || urgentAr.some((k) => text.includes(k));
+    // Explicit safety overlay — independent of domain scoring. If present,
+    // ReferralSafetyEngine escalates immediately regardless of anything else.
+    const safetyEn = ["hurt himself", "hurt herself", "hurt someone", "self-harm", "suicid", "wants to die", "not talking at all", "lost a skill", "regressed"];
+    const safetyAr = ["يؤذي نفسه", "يؤذي نفسها", "إيذاء نفسه", "لا يتحدث إطلاقًا", "فقد مهارة", "تراجع في النمو"];
+    const safetyFlag = safetyEn.some((k) => text.includes(k)) || safetyAr.some((k) => text.includes(k));
 
-    return { concernSignals, strengthSignals, urgentFlag };
+    // Additional tiering signals — used ONLY by ReferralSafetyEngine to decide
+    // HOW STRONGLY to route a case, never to add/remove developmental domains.
+    // Each is a small, explainable keyword set; none of these imply diagnosis.
+    const severityFlag = ["severe", "extreme", "constant", "all the time", "every day", "can't function", "شديد", "باستمرار", "طوال الوقت", "كل يوم"].some((k) => text.includes(k));
+    const persistenceFlag = ["for months", "for weeks", "for a long time", "since he was little", "since she was little", "always been", "منذ أشهر", "منذ فترة طويلة", "دائمًا"].some((k) => text.includes(k));
+    const functionalImpairmentFlag = ["can't go to school", "can't keep up", "falling behind", "unable to function", "stopped attending", "لا يستطيع الذهاب للمدرسة", "متأخر دراسيًا", "توقف عن الحضور"].some((k) => text.includes(k));
+    const schoolImpactFlag = ["teacher says", "school called", "suspended", "expelled", "failing", "school said", "المعلمة قالت", "المدرسة اتصلت", "الرسوب"].some((k) => text.includes(k));
+    const familyImpactFlag = ["affecting the whole family", "we are exhausted", "affecting our marriage", "siblings are affected", "يؤثر على العائلة كلها", "منهكون", "يؤثر على إخوته"].some((k) => text.includes(k));
+    const explicitHelpRequestFlag = ["need professional help", "should we see a doctor", "want a referral", "need a specialist", "need help from a professional", "نحتاج مساعدة متخصصة", "هل نحتاج طبيب", "نريد إحالة"].some((k) => text.includes(k));
+
+    return {
+      concernSignals, strengthSignals,
+      // kept for backward compatibility with any external caller expecting urgentFlag
+      urgentFlag: safetyFlag,
+      riskSignals: { safetyFlag, severityFlag, persistenceFlag, functionalImpairmentFlag, schoolImpactFlag, familyImpactFlag, explicitHelpRequestFlag },
+    };
   }
 
   /* =====================================================================
@@ -255,6 +272,7 @@
     return Array.from(tags);
   }
 
+  const STAGE_ORDER = { introduction: 0, guidedPractice: 1, independentApplication: 2, reflection: 3 };
   function act(id, domain, ageRange, title, goal, materials, duration, difficultyBase, parentInstructions, expectedOutcome, opts) {
     opts = opts || {};
     return {
@@ -263,6 +281,12 @@
       strengthsSupported: opts.strengthsSupported || [], tags: opts.tags || [],
       evidenceTag: opts.evidenceTag || domain,
       interestAdaptations: opts.interestAdaptations || [],
+      // Pedagogical stage — used by PlanSelector to build a deterministic
+      // introduction -> guidedPractice -> independentApplication -> reflection
+      // PROGRESSION across the week instead of repeating one activity.
+      // Domains with only one authored activity default to "introduction"
+      // and will still repeat (documented limitation — see engine header).
+      stage: opts.stage || "introduction",
     };
   }
 
@@ -446,6 +470,144 @@
       { en: "Let your child choose their own kind act for the day, and notice it out loud afterward.", ar: "دع طفلك يختار فعل اللطف الخاص به لهذا اليوم ولاحظه بصوت عالٍ لاحقًا." },
       { en: "A stronger habit of noticing others' needs.", ar: "عادة أقوى لملاحظة احتياجات الآخرين." },
       { tags: [], strengthsSupported: ["empathy"] }),
+
+    // ---- PROGRESSION ACTIVITIES (Defect 2 fix) ----
+    // These give PlanSelector real alternatives when a domain needs to appear
+    // on more than one day, so the week shows introduction -> guidedPractice
+    // -> independentApplication (-> reflection) instead of one activity
+    // repeated verbatim. Added for the domains most commonly primary/secondary
+    // in practice; other domains still have only one authored activity today
+    // (documented limitation, not a hidden gap).
+    act("emo-02", "emotionalRegulation", [6, 12],
+      { en: "Calm-Down Steps, Coached", ar: "خطوات الهدوء بمساعدة الوالدين" },
+      { en: "Practice a concrete 3-step calm-down routine with support", ar: "التدرب على روتين هدوء من 3 خطوات بمساعدة" },
+      { en: "None — a simple 3-step routine (stop, breathe, name it)", ar: "لا شيء — روتين بسيط من 3 خطوات (توقف، تنفس، سمِّه)" },
+      { min: 5, max: 10 }, "medium",
+      { en: "Walk through the 3 steps together out loud the first several times.", ar: "مرّا على الخطوات الثلاث معًا بصوت عالٍ في المرات الأولى." },
+      { en: "A repeatable routine your child starts to recognize.", ar: "روتين قابل للتكرار يبدأ طفلك بالتعرف عليه." },
+      { tags: ["art"], strengthsSupported: ["empathy"], stage: "guidedPractice",
+        interestAdaptations: [
+          { matchTags: ["art"], title: { en: "Calm-Down Steps Comic Strip", ar: "خطوات الهدوء كقصة مصورة" }, materials: { en: "Paper to draw the 3 steps as a mini comic strip", ar: "ورقة لرسم الخطوات الثلاث كقصة مصورة صغيرة" } },
+          { matchTags: ["sport"], title: { en: "Calm-Down Steps, Move-It-Out", ar: "خطوات الهدوء بالحركة" }, materials: { en: "Open space — the first step is 10 seconds of physical movement to release energy", ar: "مساحة مفتوحة — الخطوة الأولى 10 ثوانٍ من الحركة لتفريغ الطاقة" } },
+        ] }),
+    act("emo-03", "emotionalRegulation", [6, 12],
+      { en: "Independent Calm-Down Attempt", ar: "محاولة هدوء مستقلة" },
+      { en: "Apply the calm-down routine with minimal parent involvement", ar: "تطبيق روتين الهدوء بأقل تدخل من الوالدين" },
+      { en: "None", ar: "لا شيء" },
+      { min: 5, max: 10 }, "medium",
+      { en: "Stay nearby but let your child lead the steps themselves before you step in.", ar: "ابقَ قريبًا لكن دع طفلك يقود الخطوات بنفسه قبل أن تتدخل." },
+      { en: "More independent use of the calm-down routine in the moment.", ar: "استخدام أكثر استقلالية لروتين الهدوء في حينه." },
+      { tags: [], strengthsSupported: [], stage: "independentApplication" }),
+    act("emo-04", "emotionalRegulation", [6, 12],
+      { en: "Weekly Feelings Reflection", ar: "تأمل أسبوعي في المشاعر" },
+      { en: "Reflect on which calm-down step worked best this week", ar: "التأمل في الخطوة الأكثر فائدة هذا الأسبوع" },
+      { en: "None", ar: "لا شيء" },
+      { min: 5, max: 10 }, "easy",
+      { en: "Ask 'which step helped most this week?' — there's no wrong answer.", ar: "اسأل 'أي خطوة ساعدتك أكثر هذا الأسبوع؟' — لا توجد إجابة خاطئة." },
+      { en: "A child who can name what helps them calm down.", ar: "طفل قادر على تسمية ما يساعده على الهدوء." },
+      { tags: [], strengthsSupported: [], stage: "reflection" }),
+
+    act("frus-02", "frustrationTolerance", [6, 12],
+      { en: "Try-Three-Ways, Coached", ar: "المحاولة بثلاث طرق بمساعدة" },
+      { en: "Practice tolerating setbacks with active parent coaching", ar: "التدرب على تحمل العقبات بمساعدة فعالة من الوالدين" },
+      { en: "A moderately challenging puzzle or building task", ar: "لغز أو مهمة بناء متوسطة الصعوبة" },
+      { min: 10, max: 20 }, "medium",
+      { en: "Sit alongside and prompt 'what's another way?' at each stuck point.", ar: "اجلس بجانبه واسأل 'ما طريقة أخرى؟' عند كل نقطة توقف." },
+      { en: "More willingness to try again with support.", ar: "استعداد أكبر للمحاولة مجددًا بمساعدة." },
+      { tags: ["building"], strengthsSupported: ["resilience"], stage: "guidedPractice" }),
+    act("frus-03", "frustrationTolerance", [6, 12],
+      { en: "Solo Persistence Challenge", ar: "تحدي المثابرة المنفرد" },
+      { en: "Apply persistence to a hard task without in-the-moment coaching", ar: "تطبيق المثابرة على مهمة صعبة دون مساعدة مباشرة" },
+      { en: "A task slightly above the child's comfort level", ar: "مهمة أصعب قليلًا من مستوى راحة الطفل" },
+      { min: 10, max: 20 }, "medium",
+      { en: "Let your child attempt it fully alone first; offer help only if asked twice.", ar: "دع طفلك يحاول بمفرده أولًا؛ قدّم المساعدة فقط إذا طلبها مرتين." },
+      { en: "Longer independent persistence before seeking help.", ar: "مثابرة مستقلة أطول قبل طلب المساعدة." },
+      { tags: [], strengthsSupported: ["resilience"], stage: "independentApplication" }),
+
+    act("attn-02", "attention", [6, 12],
+      { en: "Focus Sprint With Check-Ins", ar: "لغز التركيز مع نقاط تحقق" },
+      { en: "Extend attention span with brief parent check-ins", ar: "إطالة فترة الانتباه بنقاط تحقق قصيرة من الوالدين" },
+      { en: "A jigsaw, building set, or shape puzzle", ar: "لغز أو مجموعة بناء أو أشكال" },
+      { min: 10, max: 15 }, "medium",
+      { en: "Check in briefly every few minutes rather than hovering the whole time.", ar: "تحقق بإيجاز كل بضع دقائق بدلًا من المراقبة المستمرة." },
+      { en: "Slightly longer, steadier focus with light support.", ar: "تركيز أطول وأكثر ثباتًا بدعم خفيف." },
+      { tags: ["building", "art"], strengthsSupported: ["problemSolving"], stage: "guidedPractice" }),
+    act("attn-03", "attention", [6, 12],
+      { en: "Independent Focus Block", ar: "فترة تركيز مستقلة" },
+      { en: "Sustain attention for a full block without check-ins", ar: "الحفاظ على التركيز لفترة كاملة دون تحقق" },
+      { en: "Whatever held their attention earlier in the week", ar: "ما شدّ انتباهه سابقًا هذا الأسبوع" },
+      { min: 10, max: 15 }, "medium",
+      { en: "Set a visible timer and step away completely for the full block.", ar: "اضبط مؤقتًا مرئيًا وابتعد تمامًا طوال الفترة." },
+      { en: "A real, unaided stretch of independent focus.", ar: "فترة تركيز مستقلة حقيقية دون مساعدة." },
+      { tags: [], strengthsSupported: ["problemSolving"], stage: "independentApplication" }),
+
+    act("exec-02", "executiveFunction", [6, 12],
+      { en: "Step Card Walkthrough, Guided", ar: "بطاقة المهمة بمساعدة الوالدين" },
+      { en: "Practice sequencing a task with a parent alongside", ar: "التدرب على ترتيب مهمة بمساعدة أحد الوالدين" },
+      { en: "Index cards or sticky notes", ar: "بطاقات صغيرة أو ملاحظات لاصقة" },
+      { min: 10, max: 20 }, "medium",
+      { en: "Write the steps together, then walk through the first attempt side by side.", ar: "اكتبا الخطوات معًا ثم نفذا المحاولة الأولى جنبًا إلى جنب." },
+      { en: "A clearer mental model of breaking tasks into steps.", ar: "فهم أوضح لتقسيم المهام إلى خطوات." },
+      { tags: ["building"], strengthsSupported: ["problemSolving"], stage: "guidedPractice" }),
+    act("exec-03", "executiveFunction", [6, 12],
+      { en: "Independent Step Card Task", ar: "مهمة بطاقة الخطوات المستقلة" },
+      { en: "Sequence and complete a task without parent involvement", ar: "ترتيب وإنجاز مهمة دون تدخل الوالدين" },
+      { en: "Index cards from earlier in the week", ar: "البطاقات المستخدمة سابقًا هذا الأسبوع" },
+      { min: 10, max: 20 }, "medium",
+      { en: "Hand over the blank cards and let your child build the sequence alone.", ar: "سلّمه البطاقات الفارغة ودعه يرتب التسلسل بمفرده." },
+      { en: "Independent use of a multi-step planning tool.", ar: "استخدام مستقل لأداة تخطيط متعددة الخطوات." },
+      { tags: [], strengthsSupported: ["problemSolving"], stage: "independentApplication" }),
+
+    act("soc-02", "socialSkills", [6, 12],
+      { en: "Coached Turn-Taking With Feedback", ar: "التناوب بمساعدة وملاحظات" },
+      { en: "Practice turn-taking with real-time gentle feedback", ar: "التدرب على التناوب مع ملاحظات لطيفة فورية" },
+      { en: "Any simple board or card game", ar: "أي لعبة لوحية أو ورقية بسيطة" },
+      { min: 15, max: 25 }, "medium",
+      { en: "Gently name what went well ('you waited nicely that time') during play.", ar: "اذكر بلطف ما سار جيدًا ('انتظرت بشكل جميل هذه المرة') أثناء اللعب." },
+      { en: "Better real-time self-monitoring during play.", ar: "مراقبة ذاتية أفضل أثناء اللعب." },
+      { tags: ["sport", "building"], strengthsSupported: [], stage: "guidedPractice" }),
+    act("soc-03", "socialSkills", [6, 12],
+      { en: "Independent Playdate Turn-Taking", ar: "التناوب المستقل في موعد لعب" },
+      { en: "Apply turn-taking with a peer, unsupervised in the moment", ar: "تطبيق التناوب مع صديق دون إشراف مباشر" },
+      { en: "Whatever game the children choose", ar: "أي لعبة يختارها الأطفال" },
+      { min: 20, max: 30 }, "medium",
+      { en: "Debrief afterward rather than intervening during play.", ar: "ناقشا الأمر لاحقًا بدلًا من التدخل أثناء اللعب." },
+      { en: "Turn-taking skills that hold up without adult presence.", ar: "مهارات تناوب تصمد دون وجود شخص بالغ." },
+      { tags: ["sport"], strengthsSupported: [], stage: "independentApplication" }),
+
+    act("conf-02", "confidence", [6, 12],
+      { en: "Share-Your-Proud-Moment Aloud", ar: "شارك لحظة فخرك بصوت عالٍ" },
+      { en: "Build confidence by voicing an accomplishment to family", ar: "بناء الثقة بمشاركة إنجاز مع العائلة" },
+      { en: "This week's proud-moment notebook", ar: "دفتر لحظة الفخر لهذا الأسبوع" },
+      { min: 5, max: 10 }, "medium",
+      { en: "Ask your child to read one entry aloud to another family member.", ar: "اطلب من طفلك قراءة إحدى المدخلات لفرد آخر من العائلة." },
+      { en: "More comfort voicing accomplishments to others.", ar: "راحة أكبر في التعبير عن الإنجازات أمام الآخرين." },
+      { tags: [], strengthsSupported: ["confidence"], stage: "guidedPractice" }),
+    act("conf-03", "confidence", [6, 12],
+      { en: "Proud Moment Without Prompting", ar: "لحظة فخر دون تذكير" },
+      { en: "Initiate self-recognition without being asked", ar: "المبادرة بتقدير الذات دون طلب" },
+      { en: "The notebook, left accessible", ar: "الدفتر متاح في مكان يسهل الوصول إليه" },
+      { min: 5, max: 10 }, "easy",
+      { en: "Leave the notebook out and see if your child writes in it unprompted — no reminders this time.", ar: "اترك الدفتر ظاهرًا وانظر إن كتب فيه طفلك دون تذكير هذه المرة." },
+      { en: "Self-driven recognition of personal accomplishment.", ar: "تقدير ذاتي للإنجاز دون الحاجة لتذكير." },
+      { tags: [], strengthsSupported: ["confidence"], stage: "independentApplication" }),
+
+    act("anx-02", "anxiety", [6, 12],
+      { en: "Guided Breathing With Worry Review", ar: "تنفس موجه مع مراجعة القلق" },
+      { en: "Pair a calming technique with reviewing the worry jar together", ar: "دمج تقنية تهدئة مع مراجعة وعاء القلق معًا" },
+      { en: "The worry jar from earlier in the week", ar: "وعاء القلق المستخدم سابقًا هذا الأسبوع" },
+      { min: 10, max: 15 }, "medium",
+      { en: "Take 5 slow breaths together before opening the jar to review it.", ar: "خذا 5 أنفاس بطيئة معًا قبل فتح الوعاء لمراجعته." },
+      { en: "A calming technique linked to an existing coping tool.", ar: "تقنية تهدئة مرتبطة بأداة تأقلم موجودة بالفعل." },
+      { tags: [], strengthsSupported: ["creativity"], stage: "guidedPractice" }),
+    act("anx-03", "anxiety", [6, 12],
+      { en: "Independent Worry Jar Use", ar: "استخدام مستقل لوعاء القلق" },
+      { en: "Use the coping tool independently when a worry comes up", ar: "استخدام أداة التأقلم بشكل مستقل عند ظهور قلق" },
+      { en: "The worry jar, kept in an accessible spot", ar: "وعاء القلق في مكان يسهل الوصول إليه" },
+      { min: 5, max: 10 }, "easy",
+      { en: "Notice out loud if your child uses the jar on their own, without prompting it.", ar: "لاحظ بصوت عالٍ إن استخدم طفلك الوعاء بمفرده دون تذكير." },
+      { en: "Independent use of a calming strategy in the moment.", ar: "استخدام مستقل لاستراتيجية تهدئة في حينه." },
+      { tags: [], strengthsSupported: [], stage: "independentApplication" }),
   ];
 
   /* =====================================================================
@@ -478,7 +640,7 @@
     if (activity.difficultyBase === "easy") return 10;
     return wantsEasy ? 6 : 10; // medium-base activities still score reasonably for older kids
   }
-  function scoreActivity(activity, needDomain, profile, interestTags, strengthDomains, goalDomains, usageCount) {
+  function scoreActivity(activity, needDomain, profile, interestTags, strengthDomains, goalDomains, usageCount, domainOccurrenceIndex) {
     const needMatch = activity.targetNeeds[0] === needDomain ? 40
       : activity.targetNeeds.includes(needDomain) ? 25 : 5;
     const ageMatch = ageMatchScore(activity, profile.age);
@@ -488,11 +650,29 @@
     const strengthMatch = activity.strengthsSupported.some((s) => strengthDomains.includes(s)) ? 8 : 0;
     const goalMatch = goalDomains.includes(activity.targetNeeds[0]) ? 5 : 0;
     const devMatch = developmentalMatchScore(activity, profile.age);
+    // DEFECT 2 FIX — deterministic progression, not random shuffling:
+    // domainOccurrenceIndex is "how many times THIS domain has already
+    // appeared earlier in the week" (0 the first time, 1 the second, ...).
+    // An activity whose authored `stage` matches that index gets a bonus,
+    // so the week naturally walks introduction -> guidedPractice ->
+    // independentApplication -> reflection instead of repeating one activity.
+    // NeedMatch/AgeMatch/DevMatch still dominate the ceiling (65 pts) —
+    // progression only breaks ties among activities that already fit the need.
+    // Weighted at 20 (>= max possible interestMatch of 20) so, among
+    // candidates that already match the SAME need, walking to the correct
+    // next stage reliably outranks an interest-adapted but already-used
+    // earlier-stage activity. This was tuned after a validation run showed
+    // a weight of 12 let a strongly interest-matched "introduction" activity
+    // keep winning over an available, untried "independentApplication" one.
+    const progressionMatch = STAGE_ORDER[activity.stage] === domainOccurrenceIndex ? 20 : 0;
+    // Existing per-activity repeat penalty still applies underneath, so even
+    // domains with only one authored activity taper off rather than scoring
+    // identically every time.
     const variety = -8 * (usageCount || 0);
-    const total = needMatch + ageMatch + interestMatch + strengthMatch + goalMatch + devMatch + variety;
+    const total = needMatch + ageMatch + interestMatch + strengthMatch + goalMatch + devMatch + progressionMatch + variety;
     return {
       total,
-      breakdown: { needMatch, ageMatch, interestMatch, strengthMatch, goalMatch, devMatch, variety },
+      breakdown: { needMatch, ageMatch, interestMatch, strengthMatch, goalMatch, devMatch, progressionMatch, variety },
       hasAdaptationMatch,
     };
   }
@@ -531,46 +711,61 @@
     ar: { Easy: "سهل", Medium: "متوسط" },
   };
 
-  function PlanSelector(priorities, strengths, profile, lang) {
+  function PlanSelector(priorities, strengths, profile, lang, saudiContext) {
     const interestTags = canonicalInterestTags(profile.interests);
     const daySchedule = buildDaySchedule(priorities);
     const usage = {}; // activityId -> times used so far this week
+    const domainOccurrence = {}; // domain -> times this domain has appeared so far
     const explain = [];
 
     const days = daySchedule.map((needDomain, dayIdx) => {
+      const occIndex = domainOccurrence[needDomain] || 0;
       const candidates = KNOWLEDGE_BASE
         .filter((a) => a.targetNeeds.includes(needDomain) || a.targetNeeds[0] === needDomain)
-        .map((a) => ({ activity: a, ...scoreActivity(a, needDomain, profile, interestTags, strengths, priorities, usage[a.id]) }))
+        .map((a) => ({ activity: a, ...scoreActivity(a, needDomain, profile, interestTags, strengths, priorities, usage[a.id], occIndex) }))
         .sort((a, b) => b.total - a.total || (a.activity.id < b.activity.id ? -1 : 1)); // deterministic tie-break
 
       const pool = candidates.length ? candidates : KNOWLEDGE_BASE
-        .map((a) => ({ activity: a, ...scoreActivity(a, needDomain, profile, interestTags, strengths, priorities, usage[a.id]) }))
+        .map((a) => ({ activity: a, ...scoreActivity(a, needDomain, profile, interestTags, strengths, priorities, usage[a.id], occIndex) }))
         .sort((a, b) => b.total - a.total || (a.activity.id < b.activity.id ? -1 : 1));
 
       const chosen = pool[0];
       usage[chosen.activity.id] = (usage[chosen.activity.id] || 0) + 1;
+      domainOccurrence[needDomain] = occIndex + 1;
       const adapted = pickActivityAdaptation(chosen.activity, interestTags);
       const isYoung = profile.age <= 8;
       const durationMin = isYoung ? chosen.activity.duration.min : chosen.activity.duration.max;
       const difficultyKey = chosen.activity.difficultyBase === "easy" ? "Easy" : (isYoung ? "Easy" : "Medium");
+
+      // SaudiContextLayer hook (Part B architecture) — every day's final
+      // materials/instructions pass through here. Today this is a documented
+      // pass-through (no verified Saudi content exists yet); once a verified
+      // knowledge base is supplied, this is the single seam where activity
+      // CONTENT (not just labels) would be culturally adapted.
+      const culturallyAdapted = saudiContext.adapt(
+        { title: adapted.title[lang], materials: adapted.materials[lang], tip: adapted.parentInstructions[lang] },
+        { domain: needDomain, lang, age: profile.age },
+      );
 
       const why = [];
       why.push(`primary need = ${needDomain}${chosen.breakdown.needMatch === 40 ? " (direct match)" : " (related match)"}`);
       why.push(`age appropriate for ${profile.age} (ageMatch=${chosen.breakdown.ageMatch})`);
       if (chosen.breakdown.interestMatch > 0) why.push(`matched interest tag${chosen.hasAdaptationMatch ? " with adapted variant" : ""}`);
       if (chosen.breakdown.strengthMatch > 0) why.push(`supports identified strength(s): ${chosen.activity.strengthsSupported.join(", ")}`);
+      if (chosen.breakdown.progressionMatch > 0) why.push(`progression stage = ${chosen.activity.stage} (occurrence #${occIndex + 1} for this need)`);
       explain.push({ day: dayIdx, activityId: chosen.activity.id, needDomain, score: chosen.total, breakdown: chosen.breakdown, why });
 
       return {
         day: DAY_LABELS[lang][dayIdx],
         domain: needDomain,
         activityId: chosen.activity.id,
-        title: adapted.title[lang],
+        stage: chosen.activity.stage,
+        title: culturallyAdapted.title,
         goal: chosen.activity.goal[lang],
         duration: lang === "ar" ? `${durationMin} دقيقة` : `${durationMin} min`,
         difficulty: DIFFICULTY_LABEL[lang][difficultyKey],
-        materials: adapted.materials[lang],
-        tip: adapted.parentInstructions[lang],
+        materials: culturallyAdapted.materials,
+        tip: culturallyAdapted.tip,
         evidenceTag: chosen.activity.evidenceTag,
       };
     });
@@ -614,48 +809,205 @@
   /* =====================================================================
    * 8. EVIDENCE SELECTOR — reuses the 5 sources already present in the
    *    existing UI (World Health Organization, CDC, AAP, UNICEF, Center on
-   *    the Developing Child/Harvard) rather than inventing a new source list,
-   *    per the instruction to integrate existing resources where possible.
+   *    the Developing Child/Harvard) rather than inventing a new source list.
+   *
+   *    RESTRUCTURED (Part B) into a provenance schema so every record can
+   *    eventually carry: id, sourceOrganization, sourceTitle, sourceType,
+   *    country, authorityType, evidenceLevel, url, lastVerified,
+   *    applicableAgeRanges, applicableDomains, supports, verificationStatus.
+   *
+   *    IMPORTANT — none of the existing international entries below have had
+   *    their exact titles/URLs fact-checked against the live source, so they
+   *    are honestly marked "requires-verification", NOT "verified". Nothing
+   *    in this file is ever rendered as an "authoritative" source unless its
+   *    verificationStatus is exactly "verified" (see EvidenceKnowledgeBase.select()).
    * ===================================================================== */
-  const EVIDENCE_SOURCES = {
-    who: { org: "World Health Organization", en: "Guidelines on Parenting for Early & Middle Childhood", ar: "إرشادات التربية للطفولة المبكرة والمتوسطة" },
-    cdc: { org: "CDC", en: "Positive Parenting Tips, Ages 6–12", ar: "نصائح التربية الإيجابية، الأعمار 6-12" },
-    aap: { org: "American Academy of Pediatrics", en: "HealthyChildren.org — Middle Childhood", ar: "HealthyChildren.org — مرحلة الطفولة المتوسطة" },
-    unicef: { org: "UNICEF", en: "Parenting Resources", ar: "موارد التربية" },
-    harvard: { org: "Center on the Developing Child, Harvard", en: "Serve and Return Interaction", ar: "تفاعل المبادرة والاستجابة" },
-  };
+  const INTERNATIONAL_KNOWLEDGE = [
+    { id: "intl-who-01", sourceOrganization: "World Health Organization", sourceTitle: { en: "Guidelines on Parenting for Early & Middle Childhood", ar: "إرشادات التربية للطفولة المبكرة والمتوسطة" },
+      sourceType: "guideline", country: "International", authorityType: "international", evidenceLevel: "organizational-guideline",
+      url: null, lastVerified: null, applicableAgeRanges: [[6, 12]], applicableDomains: ["emotionalRegulation", "anxiety", "frustrationTolerance"],
+      supports: "general", verificationStatus: "requires-verification" },
+    { id: "intl-cdc-01", sourceOrganization: "CDC", sourceTitle: { en: "Positive Parenting Tips, Ages 6–12", ar: "نصائح التربية الإيجابية، الأعمار 6-12" },
+      sourceType: "guideline", country: "International", authorityType: "international", evidenceLevel: "organizational-guideline",
+      url: null, lastVerified: null, applicableAgeRanges: [[6, 12]], applicableDomains: ["attention", "behavior", "dailyRoutines", "motivation"],
+      supports: "general", verificationStatus: "requires-verification" },
+    { id: "intl-aap-01", sourceOrganization: "American Academy of Pediatrics", sourceTitle: { en: "HealthyChildren.org — Middle Childhood", ar: "HealthyChildren.org — مرحلة الطفولة المتوسطة" },
+      sourceType: "guideline", country: "International", authorityType: "international", evidenceLevel: "organizational-guideline",
+      url: null, lastVerified: null, applicableAgeRanges: [[6, 12]], applicableDomains: ["confidence", "reading", "independence", "sleep", "screenUse"],
+      supports: "general", verificationStatus: "requires-verification" },
+    { id: "intl-unicef-01", sourceOrganization: "UNICEF", sourceTitle: { en: "Parenting Resources", ar: "موارد التربية" },
+      sourceType: "guideline", country: "International", authorityType: "international", evidenceLevel: "organizational-guideline",
+      url: null, lastVerified: null, applicableAgeRanges: [[6, 12]], applicableDomains: ["socialSkills", "peerRelationships", "responsibility", "empathy"],
+      supports: "general", verificationStatus: "requires-verification" },
+    { id: "intl-harvard-01", sourceOrganization: "Center on the Developing Child, Harvard", sourceTitle: { en: "Serve and Return Interaction", ar: "تفاعل المبادرة والاستجابة" },
+      sourceType: "research-summary", country: "International", authorityType: "international", evidenceLevel: "research-summary",
+      url: null, lastVerified: null, applicableAgeRanges: [[6, 12]], applicableDomains: ["executiveFunction", "communication", "problemSolving", "resilience", "creativity"],
+      supports: "general", verificationStatus: "requires-verification" },
+  ];
+
+  // PLACEHOLDER — intentionally empty. Do NOT populate from memory. A
+  // separately researched and verified Saudi knowledge-base file will be
+  // supplied later; only records with real, checked sourceOrganization,
+  // sourceTitle, url, and lastVerified fields should ever be added here,
+  // and only then with verificationStatus: "verified".
+  const SAUDI_VERIFIED_KNOWLEDGE = [];
+
   const DOMAIN_TO_EVIDENCE = {
-    attention: "cdc", executiveFunction: "harvard", emotionalRegulation: "who", anxiety: "who",
-    socialSkills: "unicef", peerRelationships: "unicef", confidence: "aap", communication: "harvard",
-    reading: "aap", behavior: "cdc", frustrationTolerance: "who", independence: "aap",
-    dailyRoutines: "cdc", sleep: "aap", screenUse: "aap", motivation: "cdc",
-    responsibility: "unicef", problemSolving: "harvard", resilience: "who", creativity: "harvard", empathy: "unicef",
+    attention: "intl-cdc-01", executiveFunction: "intl-harvard-01", emotionalRegulation: "intl-who-01", anxiety: "intl-who-01",
+    socialSkills: "intl-unicef-01", peerRelationships: "intl-unicef-01", confidence: "intl-aap-01", communication: "intl-harvard-01",
+    reading: "intl-aap-01", behavior: "intl-cdc-01", frustrationTolerance: "intl-who-01", independence: "intl-aap-01",
+    dailyRoutines: "intl-cdc-01", sleep: "intl-aap-01", screenUse: "intl-aap-01", motivation: "intl-cdc-01",
+    responsibility: "intl-unicef-01", problemSolving: "intl-harvard-01", resilience: "intl-who-01", creativity: "intl-harvard-01", empathy: "intl-unicef-01",
+  };
+
+  /**
+   * EvidenceKnowledgeBase — the single lookup surface for evidence records.
+   * Prefers a verified Saudi source for a domain if one exists (it never
+   * will until a real file is supplied — SAUDI_VERIFIED_KNOWLEDGE is empty),
+   * otherwise falls back to the international "requires-verification" pool.
+   * A record is NEVER labeled/returned as authoritative unless
+   * verificationStatus === "verified" — enforced in select(), not left to callers.
+   */
+  const EvidenceKnowledgeBase = {
+    all: [...SAUDI_VERIFIED_KNOWLEDGE, ...INTERNATIONAL_KNOWLEDGE],
+    byId(id) { return this.all.find((r) => r.id === id) || null; },
+    select(usedDomains) {
+      const records = [];
+      const seen = new Set();
+      usedDomains.forEach((domain) => {
+        const saudiMatch = SAUDI_VERIFIED_KNOWLEDGE.find(
+          (r) => r.verificationStatus === "verified" && (r.applicableDomains || []).includes(domain),
+        );
+        const record = saudiMatch || this.byId(DOMAIN_TO_EVIDENCE[domain] || "intl-cdc-01");
+        if (record && !seen.has(record.id)) { seen.add(record.id); records.push(record); }
+      });
+      if (!records.length) records.push(this.byId("intl-cdc-01"));
+      return records;
+    },
+    // Backward-compatible shape for the existing docs/index.html rendering
+    // code (`e.org`, `e.en`/`e.ar`) — derived from the richer schema above so
+    // the UI does not need to change to consume the new provenance model.
+    toLegacyShape(record) {
+      return { org: record.sourceOrganization, en: record.sourceTitle.en, ar: record.sourceTitle.ar, verificationStatus: record.verificationStatus };
+    },
   };
   function EvidenceSelector(usedDomains) {
-    const keys = Array.from(new Set(usedDomains.map((d) => DOMAIN_TO_EVIDENCE[d] || "cdc")));
-    if (!keys.length) keys.push("cdc");
-    return keys.map((k) => EVIDENCE_SOURCES[k]);
+    return EvidenceKnowledgeBase.select(usedDomains).map((r) => EvidenceKnowledgeBase.toLegacyShape(r));
   }
 
   /* =====================================================================
-   * 9. REFERRAL ENGINE — soft, topic-aware, never diagnostic.
+   * 9. SAUDI CONTEXT LAYER (Part B) — structural hook for future cultural
+   *    adaptation. NO invented Saudi clinical/ministry content lives here.
+   *    Today it is a documented pass-through: adapt() returns the activity
+   *    text unchanged. Once verified, region-appropriate content exists,
+   *    this is the single seam where activity CONTENT — not just labels —
+   *    would be swapped in, keyed by domain + language + age.
    * ===================================================================== */
-  const REFERRAL_ELIGIBLE = ["attention", "executiveFunction", "emotionalRegulation", "anxiety", "socialSkills", "peerRelationships", "communication", "reading", "behavior", "sleep", "resilience"];
+  function SaudiContextLayer(profile, lang) {
+    // Structured metadata hooks for future cultural adaptation. Populated
+    // conservatively from what the profile actually contains — no assumed
+    // defaults about family structure, religiosity, or practices, and no
+    // stereotyping. Fields left null are genuinely unknown, not guessed.
+    const culturalMetadata = {
+      languagePreference: lang,
+      bilingualHousehold: null, // not currently collected by the UI
+      familyContextTag: null,   // reserved for future, non-stereotyping context tags
+      siblingSupportHook: null, // reserved: sibling-involved activity variants
+      homeRoutineHook: null,    // reserved: home-routine-specific adaptations
+      schoolParticipationHook: null, // reserved: KSA school-calendar-aware adaptations
+    };
+    return {
+      metadata: culturalMetadata,
+      // adapt(content, context) -> content
+      // Pass-through today. Documented integration point for later cultural
+      // adaptation of actual activity title/materials/tip text (not just UI
+      // labels), once a verified Saudi content source is supplied.
+      adapt(content /*, context */) {
+        return content;
+      },
+    };
+  }
+
+  /* =====================================================================
+   * 10. REFERRAL SAFETY ENGINE (Defect 3 fix + Part B routing) — tiered,
+   *     deterministic, never diagnostic. Replaces the old single-threshold
+   *     ReferralEngine, which treated ordinary frustration/crying/difficulty
+   *     calming down as equivalent to a signal needing a licensed counselor.
+   *     Routing levels are the 7 conceptual categories from Part B — these
+   *     are ROUTING TIERS, not diagnoses.
+   * ===================================================================== */
+  const SAUDI_CONTEXT_LEVELS = {
+    NORMAL_DEVELOPMENTAL_SUPPORT: "normalDevelopmentalSupport",
+    PARENT_GUIDED_SUPPORT: "parentGuidedSupport",
+    SCHOOL_EDUCATIONAL_SUPPORT: "schoolEducationalSupport",
+    PRIMARY_HEALTHCARE_CONSULTATION: "primaryHealthcareConsultation",
+    DEVELOPMENTAL_BEHAVIORAL_ASSESSMENT: "developmentalBehavioralAssessment",
+    CHILD_ADOLESCENT_MENTAL_HEALTH_ASSESSMENT: "childAdolescentMentalHealthAssessment",
+    SAFEGUARDING_URGENT_ESCALATION: "safeguardingUrgentEscalation",
+  };
+  // Domains routed toward a mental-health-style assessment track (vs. a
+  // developmental-behavioral track) IF a case clears the higher tiers below.
+  const EMOTIONAL_TRACK_DOMAINS = ["emotionalRegulation", "anxiety", "resilience", "peerRelationships"];
   const REFERRAL_PROFESSIONAL = {
     attention: { en: "a pediatrician", ar: "طبيب الأطفال" }, executiveFunction: { en: "a pediatrician", ar: "طبيب الأطفال" },
     emotionalRegulation: { en: "a licensed counselor", ar: "مستشار مرخّص" }, anxiety: { en: "a licensed counselor", ar: "مستشار مرخّص" },
     socialSkills: { en: "a school counselor", ar: "مرشد مدرسي" }, peerRelationships: { en: "a school counselor", ar: "مرشد مدرسي" },
     communication: { en: "a speech-language specialist", ar: "أخصائي تخاطب" }, reading: { en: "a speech-language specialist", ar: "أخصائي تخاطب" },
     behavior: { en: "a pediatrician", ar: "طبيب الأطفال" }, sleep: { en: "a pediatrician", ar: "طبيب الأطفال" },
-    resilience: { en: "a licensed counselor", ar: "مستشار مرخّص" },
+    resilience: { en: "a licensed counselor", ar: "مستشار مرخّص" }, frustrationTolerance: { en: "a pediatrician", ar: "طبيب الأطفال" },
   };
-  function ReferralEngine(concernSignals, urgentFlag, lang) {
-    const top = concernSignals[0];
-    const eligible = top && REFERRAL_ELIGIBLE.includes(top.domain) && top.score >= 4;
-    if (!eligible && !urgentFlag) return null;
-    const domain = top ? top.domain : "emotionalRegulation";
-    const topicLabel = DOMAIN_BY_ID[domain] ? DOMAIN_BY_ID[domain][lang] : "";
-    const who = (REFERRAL_PROFESSIONAL[domain] || REFERRAL_PROFESSIONAL.emotionalRegulation)[lang];
+
+  /**
+   * Deterministic tiered heuristic — documented thresholds, no randomness.
+   * Ordinary parenting concerns (a handful of matched keywords in ONE domain,
+   * no severity/persistence/functional-impairment/school/family/safety
+   * signals) land at PARENT_GUIDED_SUPPORT, which shows guidance only — no
+   * professional-referral banner. Escalation requires converging evidence,
+   * not a single keyword hit.
+   */
+  function ReferralSafetyEngine(caseSignals, profile, priorities, lang) {
+    const { safetyFlag, severityFlag, persistenceFlag, functionalImpairmentFlag, schoolImpactFlag, familyImpactFlag, explicitHelpRequestFlag } = caseSignals.riskSignals;
+    const top = caseSignals.concernSignals[0];
+    const intensity = top ? top.score : 0;
+
+    if (safetyFlag) {
+      return { tier: SAUDI_CONTEXT_LEVELS.SAFEGUARDING_URGENT_ESCALATION, showReferral: true, referralText: buildReferralText("safeguarding", null, lang) };
+    }
+
+    const weight = intensity + (severityFlag ? 3 : 0) + (persistenceFlag ? 3 : 0) + (functionalImpairmentFlag ? 4 : 0) + (schoolImpactFlag ? 2 : 0) + (familyImpactFlag ? 2 : 0);
+
+    if (explicitHelpRequestFlag) {
+      return { tier: SAUDI_CONTEXT_LEVELS.PRIMARY_HEALTHCARE_CONSULTATION, showReferral: true, referralText: buildReferralText("primaryHealthcare", top ? top.domain : null, lang) };
+    }
+    if (!top) {
+      return { tier: SAUDI_CONTEXT_LEVELS.NORMAL_DEVELOPMENTAL_SUPPORT, showReferral: false, referralText: null };
+    }
+    if (weight >= 14) {
+      const track = EMOTIONAL_TRACK_DOMAINS.includes(top.domain)
+        ? SAUDI_CONTEXT_LEVELS.CHILD_ADOLESCENT_MENTAL_HEALTH_ASSESSMENT
+        : SAUDI_CONTEXT_LEVELS.DEVELOPMENTAL_BEHAVIORAL_ASSESSMENT;
+      return { tier: track, showReferral: true, referralText: buildReferralText("assessment", top.domain, lang) };
+    }
+    if (weight >= 9) {
+      return { tier: SAUDI_CONTEXT_LEVELS.PRIMARY_HEALTHCARE_CONSULTATION, showReferral: true, referralText: buildReferralText("primaryHealthcare", top.domain, lang) };
+    }
+    if (schoolImpactFlag) {
+      return { tier: SAUDI_CONTEXT_LEVELS.SCHOOL_EDUCATIONAL_SUPPORT, showReferral: false, referralText: null };
+    }
+    // Ordinary-range concern — e.g. frustration + crying + difficulty calming
+    // down with no severity/persistence/functional-impairment signal. Stays
+    // at parent-guided support: guidance card only, no referral banner.
+    return { tier: SAUDI_CONTEXT_LEVELS.PARENT_GUIDED_SUPPORT, showReferral: false, referralText: null };
+  }
+
+  function buildReferralText(kind, domain, lang) {
+    const topicLabel = domain && DOMAIN_BY_ID[domain] ? DOMAIN_BY_ID[domain][lang] : (lang === "ar" ? "هذا الجانب" : "this area");
+    const who = domain ? (REFERRAL_PROFESSIONAL[domain] || REFERRAL_PROFESSIONAL.emotionalRegulation)[lang] : (lang === "ar" ? "مختص مؤهل" : "a qualified professional");
+    if (kind === "safeguarding") {
+      return lang === "ar"
+        ? "بناءً على ما شاركته، من المهم التواصل في أقرب وقت ممكن مع مختص مؤهل أو جهة دعم مختصة. هذه ليست أداة تشخيص أو طوارئ."
+        : "Based on what you've shared, it's important to reach out to a qualified professional or support service as soon as possible. This tool is not a diagnostic or emergency service.";
+    }
     if (lang === "ar") {
       return `بناءً على ما شاركته، قد يكون من المفيد التحدث مع ${who} بخصوص ${topicLabel} كنقطة انطلاق. هذه ملاحظة عامة وليست تشخيصًا.`;
     }
@@ -663,7 +1015,11 @@
   }
 
   /* =====================================================================
-   * 10. TOP-LEVEL ENTRY POINT — single source of truth for the whole plan.
+   * 11. TOP-LEVEL ENTRY POINT — single source of truth for the whole plan.
+   *     Pipeline order matches the required architecture:
+   *     CaseAnalyzer -> DevelopmentalAnalyzer -> NeedsPriorityEngine ->
+   *     SaudiContextLayer -> EvidenceKnowledgeBase -> PlanSelector ->
+   *     GuidanceSelector -> ReferralSafetyEngine -> PersonalizedPlan
    * ===================================================================== */
   function generatePersonalizedPlan(profile, lang) {
     // profile: { age, gender, grade:{en,ar}|string, interests:[strings],
@@ -671,18 +1027,28 @@
     const caseSignals = CaseAnalyzer(profile);
     const devInfo = DevelopmentalAnalyzer(profile);
     const { priorities, strengths } = NeedsPriorityEngine(caseSignals, devInfo, profile);
-    const { days, explain } = PlanSelector(priorities, strengths, profile, lang);
+    const saudiContext = SaudiContextLayer(profile, lang);
+    const { days, explain } = PlanSelector(priorities, strengths, profile, lang, saudiContext);
     const guidanceKeys = GuidanceSelector(priorities);
     const usedDomains = Array.from(new Set([...priorities, ...days.map((d) => d.evidenceTag)]));
     const evidence = EvidenceSelector(usedDomains);
-    const referralText = ReferralEngine(caseSignals.concernSignals, caseSignals.urgentFlag, lang);
+    const referral = ReferralSafetyEngine(caseSignals, profile, priorities, lang);
 
     const priorityLabels = priorities.map((p) => DOMAIN_BY_ID[p][lang]);
     const summary = lang === "ar"
       ? `في هذه المرحلة العمرية، عادة ما يكون الأطفال في طور ${devInfo.textAr}. بناءً على ما شاركته الأسرة، يبدو أن أبرز مجالات التركيز الحالية هي: ${priorityLabels.join("، ")}.`
       : `At this age, children are typically ${devInfo.textEn}. Based on what the family shared, the current focus areas appear to be: ${priorityLabels.join(", ")}.`;
 
-    const goals = days.slice(0, 5).map((d) => d.goal);
+    // DEFECT 2 FIX — Weekly Goals must be distinct developmental objectives,
+    // not one bullet per day/activity instance. Derive exactly one goal per
+    // distinct priority domain (its "introduction"-stage activity's goal),
+    // in priority order, instead of slicing the raw 7-day sequence.
+    const goals = priorities.slice(0, 5).map((domain) => {
+      const introActivity = KNOWLEDGE_BASE.find((a) => a.targetNeeds[0] === domain && a.stage === "introduction")
+        || KNOWLEDGE_BASE.find((a) => a.targetNeeds[0] === domain);
+      return introActivity ? introActivity.goal[lang] : "";
+    }).filter(Boolean);
+
     const guidanceTexts = guidanceKeys.map((k) => GUIDANCE_BANK[k][lang]);
 
     return {
@@ -697,21 +1063,26 @@
       guidance: guidanceKeys.map((k) => ({ icon: GUIDANCE_BANK[k].icon, text: GUIDANCE_BANK[k][lang] })),
       guidanceTexts,
       evidence,
-      referralText,
-      showReferral: !!referralText,
+      referralText: referral.referralText,
+      showReferral: referral.showReferral,
+      referralTier: referral.tier, // additive — not read by existing UI, safe
+      culturalContext: saudiContext.metadata, // additive — Part B hook, not read by existing UI
       _explain: explain, // internal only — for testing/research, not prominent in UI
     };
   }
 
   const GTPersonalization = {
-    NEED_DOMAINS, KNOWLEDGE_BASE, GUIDANCE_BANK, EVIDENCE_SOURCES,
+    NEED_DOMAINS, KNOWLEDGE_BASE, GUIDANCE_BANK,
+    INTERNATIONAL_KNOWLEDGE, SAUDI_VERIFIED_KNOWLEDGE, EvidenceKnowledgeBase,
+    SAUDI_CONTEXT_LEVELS, SaudiContextLayer, ReferralSafetyEngine,
     CaseAnalyzer, DevelopmentalAnalyzer, NeedsPriorityEngine, PlanSelector,
-    GuidanceSelector, EvidenceSelector, ReferralEngine,
+    GuidanceSelector, EvidenceSelector,
     generatePersonalizedPlan,
   };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = GTPersonalization;
+
   } else {
     root.GTPersonalization = GTPersonalization;
   }
