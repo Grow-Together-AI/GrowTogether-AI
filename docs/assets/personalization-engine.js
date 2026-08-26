@@ -106,6 +106,162 @@
   ];
   const DOMAIN_BY_ID = Object.fromEntries(NEED_DOMAINS.map((d) => [d.id, d]));
 
+  /* =====================================================================
+   * 1b. VERIFIED KNOWLEDGE BASE INTEGRATION (Saudi Verified KB v1)
+   *     Loads docs/assets/saudi-verified-knowledge-base-v1.json as a
+   *     separate, independently-versioned artifact (never hand-copied into
+   *     this file). Static-file, same-origin fetch only — no child/profile
+   *     data is ever sent anywhere; this is a read of a static asset, not a
+   *     network call about the family. If the fetch fails for any reason
+   *     (offline file:// preview, missing file, blocked network), the app
+   *     falls back silently to the original validated internal
+   *     KNOWLEDGE_BASE / INTERNATIONAL_KNOWLEDGE content below — no crash,
+   *     no fabricated "verified" evidence.
+   * ===================================================================== */
+  const KB_JSON_PATH = "assets/saudi-verified-knowledge-base-v1.json";
+
+  // Engine domain id -> knowledge-base domain id. Every one of the 21
+  // engine domains has an unambiguous 1:1 match in the supplied KB (checked
+  // against the KB's domains[].id list before writing this map — no domain
+  // was ambiguous, so nothing here is a guess).
+  const ENGINE_TO_KB_DOMAIN = {
+    attention: "attentionFocus",
+    executiveFunction: "executiveFunction",
+    emotionalRegulation: "emotionalRegulation",
+    anxiety: "anxietyFears",
+    socialSkills: "socialSkills",
+    peerRelationships: "peerRelationships",
+    confidence: "confidenceSelfEsteem",
+    communication: "communication",
+    reading: "readingLanguage",
+    behavior: "behaviorCooperation",
+    frustrationTolerance: "frustrationTolerance",
+    independence: "independence",
+    dailyRoutines: "dailyRoutines",
+    sleep: "sleep",
+    screenUse: "screenUse",
+    motivation: "motivation",
+    responsibility: "responsibility",
+    problemSolving: "problemSolving",
+    resilience: "resilience",
+    creativity: "creativity",
+    empathy: "empathy",
+  };
+
+  // KB interestAdaptations are keyed by the ORIGINAL interest word
+  // ("drawing", "football", "building", "stories", "nature"), while
+  // canonicalInterestTags() (below) collapses raw parent-entered interest
+  // words into broader synonym buckets ("art", "sport", ...). This bridges
+  // the two vocabularies so a KB interest key matches whichever canonical
+  // tag(s) the parent's raw interest text produced.
+  const KB_INTEREST_TAG_BRIDGE = {
+    drawing: ["art", "drawing"],
+    football: ["sport", "football"],
+    building: ["building"],
+    stories: ["stories", "reading"],
+    nature: ["nature"],
+  };
+
+  let EXTERNAL_KB = null;                 // parsed JSON once loaded, else null
+  let EXTERNAL_KB_STATUS = "not_loaded";  // "not_loaded" | "loaded" | "failed"
+  let kbReadyPromise = null;
+
+  // Populated by indexExternalKb() once EXTERNAL_KB loads successfully.
+  let KB_DOMAIN_BY_ID = {};
+  let KB_SOURCE_BY_ID = {};
+  let KB_ACTIVITIES_BY_ENGINE_DOMAIN = {};
+
+  function indexExternalKb(kb) {
+    KB_DOMAIN_BY_ID = {};
+    KB_SOURCE_BY_ID = {};
+    KB_ACTIVITIES_BY_ENGINE_DOMAIN = {};
+    (kb.sourceRegistry || []).forEach((s) => { KB_SOURCE_BY_ID[s.id] = s; });
+    (kb.domains || []).forEach((d) => { KB_DOMAIN_BY_ID[d.id] = d; });
+    Object.entries(ENGINE_TO_KB_DOMAIN).forEach(([engineId, kbId]) => {
+      const domain = KB_DOMAIN_BY_ID[kbId];
+      if (!domain) return; // no silent guessing — simply unavailable for this domain
+      KB_ACTIVITIES_BY_ENGINE_DOMAIN[engineId] = (domain.activities || [])
+        .map((a) => kbActivityToInternal(a, engineId));
+    });
+  }
+
+  /**
+   * Adapts one KB activity record into the internal activity shape consumed
+   * by scoreActivity()/PlanSelector(), so KB-sourced and legacy hand-authored
+   * activities can be ranked side by side. This only reshapes field
+   * names/containers — it never rewrites the KB's own steps/scripts/sources.
+   * The full original KB record is kept on `_kbRaw` for the report's
+   * step-by-step rendering and for evidence-provenance lookups.
+   */
+  function kbActivityToInternal(a, engineDomainId) {
+    return {
+      id: a.id,
+      targetNeeds: [engineDomainId],
+      ageRange: [a.ageRange.min, a.ageRange.max],
+      title: a.title,
+      goal: a.purpose,
+      materials: { en: (a.materials.en || []).join(", "), ar: (a.materials.ar || []).join("، ") },
+      duration: { min: a.durationMinutes.min, max: a.durationMinutes.max },
+      // KB activities don't carry a difficultyBase; the two earlier stages
+      // read as "easy", the two later stages as "medium" — mirrors how the
+      // existing difficultyKey logic already treats stage-appropriate load.
+      difficultyBase: (a.stage === "independentApplication" || a.stage === "reflection") ? "medium" : "easy",
+      parentInstructions: a.parentScript,
+      expectedOutcome: a.successIndicator,
+      strengthsSupported: [],
+      tags: [], // interest matching for KB activities goes through kbInterestMatch(), not .tags
+      evidenceTag: engineDomainId,
+      interestAdaptations: [],
+      stage: a.stage,
+      _kb: true,
+      _kbRaw: a,
+    };
+  }
+
+  function kbInterestMatch(kbAct, interestTags) {
+    const adaptations = (kbAct._kbRaw && kbAct._kbRaw.interestAdaptations) || {};
+    const matchedKey = Object.keys(adaptations).find((key) =>
+      (KB_INTEREST_TAG_BRIDGE[key] || [key]).some((t) => interestTags.includes(t)),
+    );
+    return matchedKey ? { key: matchedKey, text: adaptations[matchedKey] } : null;
+  }
+
+  /**
+   * loadKnowledgeBase() — fetches the static JSON artifact once (GitHub
+   * Pages-compatible: same-origin relative fetch, no auth headers, no child
+   * data in the request). Safe to call repeatedly; only fetches once. NEVER
+   * rejects — callers can always `await` it and keep going, falling back to
+   * the original validated internal content on any failure.
+   */
+  function loadKnowledgeBase(path) {
+    if (kbReadyPromise) return kbReadyPromise;
+    const url = path || KB_JSON_PATH;
+    kbReadyPromise = (typeof fetch === "function"
+      ? fetch(url).then((res) => {
+          if (!res.ok) throw new Error("KB fetch failed: " + res.status);
+          return res.json();
+        })
+      : Promise.reject(new Error("fetch unavailable")))
+      .then((json) => {
+        if (!json || !Array.isArray(json.domains) || !Array.isArray(json.sourceRegistry)) {
+          throw new Error("KB JSON missing expected shape");
+        }
+        EXTERNAL_KB = json;
+        EXTERNAL_KB_STATUS = "loaded";
+        indexExternalKb(json);
+      })
+      .catch((err) => {
+        // Developer-facing warning only — parents never see a raw error,
+        // and the app keeps working on the original validated content.
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn("[GTPersonalization] Saudi verified knowledge base failed to load — falling back to built-in content.", err);
+        }
+        EXTERNAL_KB = null;
+        EXTERNAL_KB_STATUS = "failed";
+      });
+    return kbReadyPromise;
+  }
+
   // Positive/asset-framed lexicon — used to detect STRENGTHS, not concerns.
   // Kept separate from NEED_DOMAINS keywords so "confident" never scores as a
   // concern for "confidence" and vice versa.
@@ -687,6 +843,65 @@
     };
   }
 
+  /**
+   * scoreKbActivity — sibling to scoreActivity() for KB-sourced activities.
+   * Same weighting philosophy and priority order (NeedMatch > Age/Dev >
+   * Progression > Interest > Strength > Variety), so KB and legacy
+   * activities for the same domain compete on equal footing: whichever
+   * scores higher for THIS profile/day is chosen, never a hardcoded
+   * preference for one source over the other. KB activities don't yet
+   * carry strengthsSupported tags, so strengthMatch is always 0 for them —
+   * a legacy activity can still win a tie via its strength match.
+   */
+  function scoreKbActivity(activity, needDomain, profile, interestTags, strengthDomains, goalDomains, usageCount, domainOccurrenceIndex) {
+    const needMatch = activity.targetNeeds[0] === needDomain ? 40 : 5;
+    const ageMatch = ageMatchScore(activity, profile.age);
+    const match = kbInterestMatch(activity, interestTags);
+    const interestMatch = match ? 20 : 0;
+    const strengthMatch = 0;
+    const goalMatch = goalDomains.includes(activity.targetNeeds[0]) ? 5 : 0;
+    const devMatch = developmentalMatchScore(activity, profile.age);
+    const progressionMatch = STAGE_ORDER[activity.stage] === domainOccurrenceIndex ? 20 : 0;
+    const variety = -8 * (usageCount || 0);
+    const total = needMatch + ageMatch + interestMatch + strengthMatch + goalMatch + devMatch + progressionMatch + variety;
+    return {
+      total,
+      breakdown: { needMatch, ageMatch, interestMatch, strengthMatch, goalMatch, devMatch, progressionMatch, variety },
+      hasAdaptationMatch: !!match,
+      kbInterestKey: match ? match.key : null,
+    };
+  }
+
+  // Dispatches to the right scorer based on activity source — the single
+  // seam PlanSelector uses so it never needs to know which pool an activity
+  // came from.
+  function scoreAny(activity, needDomain, profile, interestTags, strengthDomains, goalDomains, usageCount, domainOccurrenceIndex) {
+    return activity._kb
+      ? scoreKbActivity(activity, needDomain, profile, interestTags, strengthDomains, goalDomains, usageCount, domainOccurrenceIndex)
+      : scoreActivity(activity, needDomain, profile, interestTags, strengthDomains, goalDomains, usageCount, domainOccurrenceIndex);
+  }
+
+  /**
+   * pickActivityAdaptationUnified — like pickActivityAdaptation(), but also
+   * handles KB activities. KB interestAdaptations are a single explanatory
+   * sentence describing HOW to vary the practice for that interest (not a
+   * full title/materials swap), so it comes back as `interestNote` and gets
+   * folded into the activity card/report rather than replacing the title.
+   */
+  function pickActivityAdaptationUnified(activity, interestTags) {
+    if (activity._kb) {
+      const match = kbInterestMatch(activity, interestTags);
+      return {
+        title: activity.title,
+        materials: activity.materials,
+        parentInstructions: activity.parentInstructions,
+        interestNote: match ? match.text : null,
+      };
+    }
+    const base = pickActivityAdaptation(activity, interestTags);
+    return Object.assign({ interestNote: null }, base);
+  }
+
   function buildDaySchedule(priorities) {
     // Deterministic weighted round-robin: rank 0 gets weight 3, rank 1 gets
     // weight 2, everything else gets weight 1 — top needs appear more often
@@ -720,31 +935,42 @@
 
     const days = daySchedule.map((needDomain, dayIdx) => {
       const occIndex = domainOccurrence[needDomain] || 0;
-      const candidates = KNOWLEDGE_BASE
-        .filter((a) => a.targetNeeds.includes(needDomain) || a.targetNeeds[0] === needDomain)
-        .map((a) => ({ activity: a, ...scoreActivity(a, needDomain, profile, interestTags, strengths, priorities, usage[a.id], occIndex) }))
+
+      // Candidate pool = legacy hand-authored activities for this domain PLUS
+      // (when the verified KB loaded) its KB-sourced activities for this
+      // domain. Both are scored with the same priority order (Need > Age/Dev
+      // > Progression > Interest > Strength > Variety) via scoreAny(), so the
+      // KB never simply overrides the legacy content — it only wins a given
+      // day if it actually scores higher for this child/day.
+      const legacyPool = KNOWLEDGE_BASE.filter((a) => a.targetNeeds.includes(needDomain) || a.targetNeeds[0] === needDomain);
+      const kbPool = (EXTERNAL_KB_STATUS === "loaded" && KB_ACTIVITIES_BY_ENGINE_DOMAIN[needDomain]) || [];
+      const combinedPool = kbPool.concat(legacyPool);
+
+      const scoreAll = (pool) => pool
+        .map((a) => ({ activity: a, ...scoreAny(a, needDomain, profile, interestTags, strengths, priorities, usage[a.id], occIndex) }))
         .sort((a, b) => b.total - a.total || (a.activity.id < b.activity.id ? -1 : 1)); // deterministic tie-break
 
-      const pool = candidates.length ? candidates : KNOWLEDGE_BASE
-        .map((a) => ({ activity: a, ...scoreActivity(a, needDomain, profile, interestTags, strengths, priorities, usage[a.id], occIndex) }))
-        .sort((a, b) => b.total - a.total || (a.activity.id < b.activity.id ? -1 : 1));
+      const candidates = scoreAll(combinedPool);
+      const pool = candidates.length ? candidates : scoreAll(KNOWLEDGE_BASE);
 
       const chosen = pool[0];
       usage[chosen.activity.id] = (usage[chosen.activity.id] || 0) + 1;
       domainOccurrence[needDomain] = occIndex + 1;
-      const adapted = pickActivityAdaptation(chosen.activity, interestTags);
+      const adapted = pickActivityAdaptationUnified(chosen.activity, interestTags);
       const isYoung = profile.age <= 8;
       const durationMin = isYoung ? chosen.activity.duration.min : chosen.activity.duration.max;
       const difficultyKey = chosen.activity.difficultyBase === "easy" ? "Easy" : (isYoung ? "Easy" : "Medium");
 
-      // SaudiContextLayer hook (Part B architecture) — every day's final
-      // materials/instructions pass through here. Today this is a documented
-      // pass-through (no verified Saudi content exists yet); once a verified
-      // knowledge base is supplied, this is the single seam where activity
-      // CONTENT (not just labels) would be culturally adapted.
+      // SaudiContextLayer hook — every day's final materials/instructions
+      // pass through here. When the verified KB is loaded and the chosen
+      // activity carries saudiContextTags, adapt() attaches a real,
+      // KB-authored cultural note (family/home-school/local-materials/
+      // bilingual) keyed off those tags; otherwise it stays a documented
+      // pass-through exactly as before.
+      const kbTags = (chosen.activity._kbRaw && chosen.activity._kbRaw.saudiContextTags) || [];
       const culturallyAdapted = saudiContext.adapt(
         { title: adapted.title[lang], materials: adapted.materials[lang], tip: adapted.parentInstructions[lang] },
-        { domain: needDomain, lang, age: profile.age },
+        { domain: needDomain, lang, age: profile.age, saudiContextTags: kbTags },
       );
 
       const why = [];
@@ -753,7 +979,10 @@
       if (chosen.breakdown.interestMatch > 0) why.push(`matched interest tag${chosen.hasAdaptationMatch ? " with adapted variant" : ""}`);
       if (chosen.breakdown.strengthMatch > 0) why.push(`supports identified strength(s): ${chosen.activity.strengthsSupported.join(", ")}`);
       if (chosen.breakdown.progressionMatch > 0) why.push(`progression stage = ${chosen.activity.stage} (occurrence #${occIndex + 1} for this need)`);
-      explain.push({ day: dayIdx, activityId: chosen.activity.id, needDomain, score: chosen.total, breakdown: chosen.breakdown, why });
+      explain.push({ day: dayIdx, activityId: chosen.activity.id, needDomain, source: chosen.activity._kb ? "kb" : "legacy", score: chosen.total, breakdown: chosen.breakdown, why });
+
+      const raw = chosen.activity._kbRaw;
+      const interestNoteLocalized = adapted.interestNote ? adapted.interestNote[lang] : null;
 
       return {
         day: DAY_LABELS[lang][dayIdx],
@@ -767,6 +996,28 @@
         materials: culturallyAdapted.materials,
         tip: culturallyAdapted.tip,
         evidenceTag: chosen.activity.evidenceTag,
+        // Internal-only provenance/data for evidence selection — never
+        // rendered directly to parents.
+        evidenceSourceIds: raw ? raw.evidenceSourceIds : null,
+        contentStatus: raw ? raw.contentStatus : "legacy_authored_activity",
+        // Full parent-facing instruction card for the report's
+        // "How to Do This Week's Activities" section.
+        howTo: {
+          title: culturallyAdapted.title,
+          purpose: chosen.activity.goal[lang],
+          duration: lang === "ar" ? `${durationMin} دقيقة` : `${durationMin} min`,
+          materials: raw ? raw.materials[lang] : [adapted.materials[lang]],
+          steps: raw ? raw.steps[lang] : [adapted.parentInstructions[lang]],
+          parentScript: raw ? raw.parentScript[lang] : adapted.parentInstructions[lang],
+          parentDo: raw ? raw.parentDo[lang] : [],
+          parentAvoid: raw ? raw.parentAvoid[lang] : [],
+          successIndicator: raw ? raw.successIndicator[lang] : chosen.activity.expectedOutcome[lang],
+          reflectionQuestion: raw ? raw.reflectionQuestion[lang]
+            : (lang === "ar" ? "ما الذي أعجبك في هذا النشاط، وماذا تود تجربته لاحقًا؟" : "What did you enjoy about this activity, and what would you like to try next?"),
+          interestNote: interestNoteLocalized,
+          culturalNote: culturallyAdapted.culturalNote || null,
+          stage: chosen.activity.stage,
+        },
       };
     });
 
@@ -896,12 +1147,12 @@
   }
 
   /* =====================================================================
-   * 9. SAUDI CONTEXT LAYER (Part B) — structural hook for future cultural
-   *    adaptation. NO invented Saudi clinical/ministry content lives here.
-   *    Today it is a documented pass-through: adapt() returns the activity
-   *    text unchanged. Once verified, region-appropriate content exists,
-   *    this is the single seam where activity CONTENT — not just labels —
-   *    would be swapped in, keyed by domain + language + age.
+   * 9. SAUDI CONTEXT LAYER (Part B) — activated once the verified KB is
+   *    loaded. Uses ONLY the KB's own bilingual saudiContextLayer
+   *    .adaptationRules, keyed off an activity's saudiContextTags — never
+   *    invented content, and never a generic "this is for a Saudi family"
+   *    banner. When the KB isn't loaded, or an activity carries no
+   *    saudiContextTags, adapt() stays a pass-through exactly as before.
    * ===================================================================== */
   function SaudiContextLayer(profile, lang) {
     // Structured metadata hooks for future cultural adaptation. Populated
@@ -915,15 +1166,44 @@
       siblingSupportHook: null, // reserved: sibling-involved activity variants
       homeRoutineHook: null,    // reserved: home-routine-specific adaptations
       schoolParticipationHook: null, // reserved: KSA school-calendar-aware adaptations
+      kbContextActive: EXTERNAL_KB_STATUS === "loaded",
     };
+
+    const kbRules = (EXTERNAL_KB && EXTERNAL_KB.saudiContextLayer && EXTERNAL_KB.saudiContextLayer.adaptationRules) || [];
+    const RULE_BY_ID = Object.fromEntries(kbRules.map((r) => [r.id, r]));
+    // Maps the KB's own saudiContextTags (attached per-activity) to the
+    // KB's own adaptationRules ids — a lookup table, not new content.
+    const TAG_TO_RULE_ID = {
+      arabic_bilingual_ready: "ARABIC_BILINGUAL",
+      family_centered: "FAMILY_CENTERED",
+      sibling_optional: "FAMILY_CENTERED",
+      home_school_connection: "HOME_SCHOOL",
+      school_participation: "HOME_SCHOOL",
+      locally_available_materials: "LOCAL_MATERIALS",
+    };
+    const PRIORITY_ORDER = ["FAMILY_CENTERED", "LOCAL_MATERIALS", "ARABIC_BILINGUAL", "HOME_SCHOOL"];
+
     return {
       metadata: culturalMetadata,
       // adapt(content, context) -> content
-      // Pass-through today. Documented integration point for later cultural
-      // adaptation of actual activity title/materials/tip text (not just UI
-      // labels), once a verified Saudi content source is supplied.
-      adapt(content /*, context */) {
-        return content;
+      // Pass-through when the KB isn't loaded or the activity has no
+      // saudiContextTags (exactly the original documented behavior).
+      // Otherwise picks ONE most-relevant KB-authored rule for the tags
+      // present on this specific activity and attaches it as
+      // `content.culturalNote` — a real, non-stereotyping, tag-driven note,
+      // not a decorative label.
+      adapt(content, context) {
+        context = context || {};
+        const tags = context.saudiContextTags || [];
+        if (!tags.length || !kbRules.length) return content;
+        const ruleId = PRIORITY_ORDER.find(
+          (id) => tags.some((tag) => TAG_TO_RULE_ID[tag] === id) && RULE_BY_ID[id],
+        );
+        const rule = ruleId ? RULE_BY_ID[ruleId] : null;
+        if (!rule) return content;
+        return Object.assign({}, content, {
+          culturalNote: rule[lang === "ar" ? "ruleAr" : "ruleEn"],
+        });
       },
     };
   }
@@ -1014,6 +1294,40 @@
     return `Based on what you've shared, it may help to speak with ${who} about ${topicLabel} as a starting point. This is a general educational pointer, not a diagnosis.`;
   }
 
+  /**
+   * kbSourceToLegacyShape — reshapes a KB sourceRegistry record into the
+   * same {org, en, ar} shape the existing UI already renders (see
+   * EvidenceKnowledgeBase.toLegacyShape above), with the caveat/URL/status
+   * kept alongside for callers that want to render them. Never invents a
+   * field: caveatEn/caveatAr are only present when the source record itself
+   * has them (i.e. verified_with_caveat awareness sources).
+   */
+  function kbSourceToLegacyShape(src) {
+    return {
+      org: src.sourceOrganization,
+      en: src.sourceTitleEn,
+      ar: src.sourceTitleAr,
+      verificationStatus: src.verificationStatus,
+      caveatEn: src.caveatEn || null,
+      caveatAr: src.caveatAr || null,
+      url: src.url || null,
+    };
+  }
+
+  // Looks up which KB source ids (if any) actually support a triggered
+  // referral tier / domain-specific rule — used only to attach honest
+  // citations to the evidence list, never to change tier thresholds.
+  function kbReferralSourceIds(tierId, kbDomainId) {
+    if (!EXTERNAL_KB || !EXTERNAL_KB.referralSafetyEngine) return [];
+    const ids = new Set();
+    const tier = (EXTERNAL_KB.referralSafetyEngine.tiers || []).find((t) => t.id === tierId);
+    (tier && tier.sourceIds || []).forEach((id) => ids.add(id));
+    (EXTERNAL_KB.referralSafetyEngine.domainSpecificRules || []).forEach((r) => {
+      if (r.domain === kbDomainId && r.sourceId) ids.add(r.sourceId);
+    });
+    return Array.from(ids);
+  }
+
   /* =====================================================================
    * 11. TOP-LEVEL ENTRY POINT — single source of truth for the whole plan.
    *     Pipeline order matches the required architecture:
@@ -1031,8 +1345,33 @@
     const { days, explain } = PlanSelector(priorities, strengths, profile, lang, saudiContext);
     const guidanceKeys = GuidanceSelector(priorities);
     const usedDomains = Array.from(new Set([...priorities, ...days.map((d) => d.evidenceTag)]));
-    const evidence = EvidenceSelector(usedDomains);
     const referral = ReferralSafetyEngine(caseSignals, profile, priorities, lang);
+
+    // EVIDENCE PROVENANCE — when the verified KB is loaded, evidence is
+    // built strictly from (a) evidenceSourceIds actually attached to the
+    // activities selected this week and (b) sourceIds actually tied to the
+    // referral tier/domain rule that triggered, filtered to
+    // verified/verified_with_caveat only, deduplicated, never invented. If
+    // that yields nothing (e.g. KB loaded but no activity matched), or the
+    // KB failed to load, fall back to the original validated
+    // EvidenceSelector exactly as before.
+    let evidence;
+    if (EXTERNAL_KB_STATUS === "loaded") {
+      const ids = new Set();
+      days.forEach((d) => (d.evidenceSourceIds || []).forEach((id) => ids.add(id)));
+      if (referral.showReferral) {
+        const topDomain = caseSignals.concernSignals[0] ? caseSignals.concernSignals[0].domain : null;
+        const kbDomain = topDomain ? ENGINE_TO_KB_DOMAIN[topDomain] : null;
+        kbReferralSourceIds(referral.tier, kbDomain).forEach((id) => ids.add(id));
+      }
+      const kbEvidence = Array.from(ids)
+        .map((id) => KB_SOURCE_BY_ID[id])
+        .filter((src) => src && (src.verificationStatus === "verified" || src.verificationStatus === "verified_with_caveat"))
+        .map(kbSourceToLegacyShape);
+      evidence = kbEvidence.length ? kbEvidence : EvidenceSelector(usedDomains);
+    } else {
+      evidence = EvidenceSelector(usedDomains);
+    }
 
     const priorityLabels = priorities.map((p) => DOMAIN_BY_ID[p][lang]);
     const summary = lang === "ar"
@@ -1042,8 +1381,13 @@
     // DEFECT 2 FIX — Weekly Goals must be distinct developmental objectives,
     // not one bullet per day/activity instance. Derive exactly one goal per
     // distinct priority domain (its "introduction"-stage activity's goal),
-    // in priority order, instead of slicing the raw 7-day sequence.
+    // in priority order, instead of slicing the raw 7-day sequence. Prefers
+    // the KB's own developmentalGoal text for the domain when loaded (same
+    // underlying goal text the KB's introduction activity already uses),
+    // else the legacy KNOWLEDGE_BASE goal — never both, never a guess.
     const goals = priorities.slice(0, 5).map((domain) => {
+      const kbDomain = EXTERNAL_KB_STATUS === "loaded" ? KB_DOMAIN_BY_ID[ENGINE_TO_KB_DOMAIN[domain]] : null;
+      if (kbDomain && kbDomain.developmentalGoal) return kbDomain.developmentalGoal[lang];
       const introActivity = KNOWLEDGE_BASE.find((a) => a.targetNeeds[0] === domain && a.stage === "introduction")
         || KNOWLEDGE_BASE.find((a) => a.targetNeeds[0] === domain);
       return introActivity ? introActivity.goal[lang] : "";
@@ -1067,6 +1411,7 @@
       showReferral: referral.showReferral,
       referralTier: referral.tier, // additive — not read by existing UI, safe
       culturalContext: saudiContext.metadata, // additive — Part B hook, not read by existing UI
+      kbStatus: EXTERNAL_KB_STATUS, // additive — "loaded" | "failed" | "not_loaded", dev-facing only
       _explain: explain, // internal only — for testing/research, not prominent in UI
     };
   }
@@ -1078,6 +1423,11 @@
     CaseAnalyzer, DevelopmentalAnalyzer, NeedsPriorityEngine, PlanSelector,
     GuidanceSelector, EvidenceSelector,
     generatePersonalizedPlan,
+    // Saudi Verified Knowledge Base v1 integration — additive exports only.
+    loadKnowledgeBase,
+    ready: loadKnowledgeBase, // alias: callers can `await GTPersonalization.ready()`
+    ENGINE_TO_KB_DOMAIN,
+    getKbStatus: () => EXTERNAL_KB_STATUS,
   };
 
   if (typeof module !== "undefined" && module.exports) {

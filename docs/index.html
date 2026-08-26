@@ -882,6 +882,60 @@
         color: var(--muted);
         font-size: 12.5px;
       }
+      .evidence-item .caveat {
+        display: block;
+        margin-top: 4px;
+        font-size: 11.5px;
+        font-style: italic;
+        color: var(--muted);
+      }
+      .evidence-note {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin: 0 0 10px;
+        font-style: italic;
+      }
+
+      /* ---------------- HOW-TO ACTIVITY CARDS (report) ---------------- */
+      .howto-list {
+        display: grid;
+        gap: 14px;
+      }
+      .howto-card {
+        border: 1px solid var(--border);
+        border-radius: var(--r-sm);
+        padding: 14px 16px;
+      }
+      .howto-card h4 {
+        margin: 0 0 4px;
+        font-size: 15px;
+        color: var(--indigo-dark);
+      }
+      .howto-meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .howto-card p {
+        font-size: 13.5px;
+        margin: 8px 0 2px;
+        color: var(--text);
+      }
+      .howto-card ul,
+      .howto-card ol {
+        margin: 2px 0 6px;
+        padding-inline-start: 20px;
+        font-size: 13.5px;
+        color: var(--text);
+      }
+      .howto-note {
+        font-size: 12.5px;
+        color: var(--indigo-dark);
+        background: var(--blue-tint);
+        border-radius: var(--r-sm);
+        padding: 8px 10px;
+        margin: 8px 0 0;
+      }
 
       /* ---------------- REPORT ---------------- */
       #report-section {
@@ -1818,7 +1872,8 @@
       [dir="rtl"] .toggle-row,
       [dir="rtl"] .notif-item,
       [dir="rtl"] .stat-card,
-      [dir="rtl"] .quick-card {
+      [dir="rtl"] .quick-card,
+      [dir="rtl"] .howto-card {
         text-align: right;
       }
       [dir="rtl"] .ai-steps {
@@ -2396,10 +2451,29 @@
               </div>
               <div class="report-block card res-card">
                 <div class="res-head">
+                  <div class="res-icon" style="background: var(--blue-tint)">
+                    🛠️
+                  </div>
+                  <h3 data-i18n="report.b5b">
+                    6. How to Do This Week's Activities
+                  </h3>
+                </div>
+                <!-- Populated by buildReport() from planData.activities[].howTo
+                     — one parent-facing instruction card per DISTINCT
+                     activity used this week (repeated days referencing the
+                     same activity are listed once, with all their day
+                     labels). Sourced from the Saudi Verified Knowledge Base
+                     v1 where available; falls back to the existing activity's
+                     own instructions otherwise. No internal scoring/agent
+                     reasoning is ever rendered here. -->
+                <div id="rep-howto" class="howto-list"></div>
+              </div>
+              <div class="report-block card res-card">
+                <div class="res-head">
                   <div class="res-icon" style="background: var(--purple-tint)">
                     💬
                   </div>
-                  <h3 data-i18n="report.b6">6. Parent Recommendations</h3>
+                  <h3 data-i18n="report.b6">7. Parent Recommendations</h3>
                 </div>
                 <ul class="rec-list" id="rep-recs"></ul>
               </div>
@@ -2411,7 +2485,7 @@
                 <div class="res-head">
                   <div class="res-icon">ℹ️</div>
                   <h3 style="color: #7a5a15" data-i18n="report.b7">
-                    7. Professional Recommendation
+                    8. Professional Recommendation
                   </h3>
                 </div>
                 <p id="rep-referral"></p>
@@ -2421,12 +2495,19 @@
                   <div class="res-icon" style="background: var(--blue-tint)">
                     📚
                   </div>
-                  <h3 data-i18n="report.b8">8. Evidence Sources</h3>
+                  <h3 data-i18n="report.b8">9. Evidence Sources</h3>
                 </div>
+                <p class="evidence-note" data-i18n="report.evidenceNote">
+                  This week's plan draws on the principles below. Step-by-step
+                  activity details are Grow Together AI's own evidence-informed
+                  adaptations, not verbatim clinical protocols from these
+                  sources.
+                </p>
                 <!-- Populated by buildReport() from planData.evidence, which
                      comes from the same generatePersonalizedPlan() call used
                      for the Results view (single source of truth). Markup
-                     shape unchanged from the original static version. -->
+                     shape unchanged from the original static version, plus an
+                     optional .caveat line for verified_with_caveat sources. -->
                 <div class="evidence-list" id="rep-evidence"></div>
               </div>
               <div class="report-block card res-card" style="margin-bottom: 0">
@@ -2434,7 +2515,7 @@
                   <div class="res-icon" style="background: var(--purple-tint)">
                     🗓
                   </div>
-                  <h3 data-i18n="report.b9">9. Next Review Date</h3>
+                  <h3 data-i18n="report.b9">10. Next Review Date</h3>
                 </div>
                 <div class="goal-row" style="margin-bottom: 0">
                   <div class="tick">✓</div>
@@ -4351,10 +4432,23 @@
           "report.b3": "3. Development Analysis",
           "report.b4": "4. Weekly Goals",
           "report.b5": "5. Weekly Activities",
-          "report.b6": "6. Parent Recommendations",
-          "report.b7": "7. Professional Recommendation",
-          "report.b8": "8. Evidence Sources",
-          "report.b9": "9. Next Review Date",
+          "report.b5b": "6. How to Do This Week's Activities",
+          "report.b6": "7. Parent Recommendations",
+          "report.b7": "8. Professional Recommendation",
+          "report.b8": "9. Evidence Sources",
+          "report.b9": "10. Next Review Date",
+          "report.evidenceNote":
+            "This week's plan draws on the principles below. Step-by-step activity details are Grow Together AI's own evidence-informed adaptations, not verbatim clinical protocols from these sources.",
+          "howto.materials": "Materials",
+          "howto.steps": "Step-by-Step",
+          "howto.script": "What Can I Say to My Child?",
+          "howto.do": "Parent — Do",
+          "howto.avoid": "Parent — Avoid",
+          "howto.success": "Success Indicator",
+          "howto.reflection": "Reflection",
+          "howto.days": "Days this week",
+          "howto.purpose": "Purpose",
+          "howto.progressionNote": "This week's progression for this activity:",
           "report.name": "Name",
           "report.preparedFor": "Prepared for {name}",
           "report.age": "Age",
@@ -4762,10 +4856,23 @@
           "report.b3": "3. تحليل النمو",
           "report.b4": "4. الأهداف الأسبوعية",
           "report.b5": "5. الأنشطة الأسبوعية",
-          "report.b6": "6. توصيات للوالدين",
-          "report.b7": "7. توصية احترافية",
-          "report.b8": "8. المصادر العلمية",
-          "report.b9": "9. تاريخ المراجعة القادمة",
+          "report.b5b": "6. كيفية تنفيذ أنشطة هذا الأسبوع",
+          "report.b6": "7. توصيات للوالدين",
+          "report.b7": "8. توصية احترافية",
+          "report.b8": "9. المصادر العلمية",
+          "report.b9": "10. تاريخ المراجعة القادمة",
+          "report.evidenceNote":
+            "تعتمد خطة هذا الأسبوع على المبادئ الواردة أدناه. تفاصيل الأنشطة خطوة بخطوة هي صياغة تطبيقية مستنيرة بالأدلة من إعداد Grow Together AI، وليست بروتوكولًا سريريًا منقولًا حرفيًا من هذه المصادر.",
+          "howto.materials": "الأدوات",
+          "howto.steps": "خطوة بخطوة",
+          "howto.script": "ماذا يمكنني أن أقول لطفلي؟",
+          "howto.do": "الوالد — افعل",
+          "howto.avoid": "الوالد — تجنّب",
+          "howto.success": "مؤشر النجاح",
+          "howto.reflection": "للتأمل",
+          "howto.days": "أيام هذا الأسبوع",
+          "howto.purpose": "الهدف",
+          "howto.progressionNote": "تقدّم هذا النشاط هذا الأسبوع:",
           "report.name": "الاسم",
           "report.preparedFor": "أُعِدّ من أجل {name}",
           "report.age": "العمر",
@@ -5140,14 +5247,17 @@
         if (typeof renderAssessmentChildOptions === "function")
           renderAssessmentChildOptions();
         if (typeof planData !== "undefined" && planData && planData.age) {
-          if (typeof buildResults === "function") buildResults();
-          if (
-            document
-              .getElementById("report-section")
-              .classList.contains("show") &&
-            typeof buildReport === "function"
-          )
-            buildReport();
+          if (typeof buildResults === "function") {
+            Promise.resolve(buildResults()).then(() => {
+              if (
+                document
+                  .getElementById("report-section")
+                  .classList.contains("show") &&
+                typeof buildReport === "function"
+              )
+                buildReport();
+            });
+          }
         }
       }
 
@@ -5307,9 +5417,11 @@
             clearInterval(interval);
             renderAiSteps(totalSteps - 1); // mark "Complete ✓" as done
 
-            setTimeout(() => {
+            setTimeout(async () => {
               // 3. Generate the personalized plan from entered form data
-              buildResults();
+              // (awaits the Saudi Verified Knowledge Base static-asset load,
+              // which resolves quickly and never rejects — see buildResults())
+              await buildResults();
 
               // 4. Display the Results section
               document.getElementById("results").classList.add("show");
@@ -5347,7 +5459,79 @@
         focusAr: null,
       };
 
-      function buildResults() {
+      // Shared evidence renderer for both the Results view and the Report —
+      // single source of truth for markup so the two never drift. Renders
+      // the same .evidence-item shape as the original static version, plus
+      // an optional caveat line for verified_with_caveat (awareness, not
+      // clinical-guideline) sources — never hides the caveat, never invents
+      // one.
+      function renderEvidenceList(containerId, evidenceArr, isAr) {
+        document.getElementById(containerId).innerHTML = (evidenceArr || [])
+          .map((e) => {
+            const caveat = e.verificationStatus === "verified_with_caveat" && (e.caveatEn || e.caveatAr)
+              ? `<span class="caveat">${isAr ? (e.caveatAr || e.caveatEn) : (e.caveatEn || e.caveatAr)}</span>`
+              : "";
+            return `<div class="evidence-item"><span class="src">${e.org}</span><span class="cite">${isAr ? e.ar : e.en}${caveat}</span></div>`;
+          })
+          .join("");
+      }
+
+      // Renders one parent-facing instruction card per DISTINCT activity
+      // used in the week (repeats of the same activity across multiple days
+      // are listed once, with every day it appears on). Reads only from the
+      // plan's own `howTo` field already assembled by the personalization
+      // engine — no scoring/internal fields are read or shown here.
+      function renderHowToActivities(containerId, activities, isAr) {
+        const dayLabelsByActivity = {};
+        (activities || []).forEach((d) => {
+          (dayLabelsByActivity[d.activityId] = dayLabelsByActivity[d.activityId] || []).push(d.day);
+        });
+        const seen = new Set();
+        const cards = (activities || []).filter((d) => {
+          if (seen.has(d.activityId)) return false;
+          seen.add(d.activityId);
+          return true;
+        });
+        document.getElementById(containerId).innerHTML = cards
+          .map((d) => {
+            const h = d.howTo || {};
+            const days = (dayLabelsByActivity[d.activityId] || [d.day]).join(isAr ? "، " : ", ");
+            const materialsArr = Array.isArray(h.materials) ? h.materials : [h.materials].filter(Boolean);
+            const stepsArr = Array.isArray(h.steps) ? h.steps : [h.steps].filter(Boolean);
+            const materialsHtml = materialsArr.map((m) => `<li>${m}</li>`).join("");
+            const stepsHtml = stepsArr.map((s) => `<li>${s}</li>`).join("");
+            const doHtml = (h.parentDo || []).map((x) => `<li>${x}</li>`).join("");
+            const avoidHtml = (h.parentAvoid || []).map((x) => `<li>${x}</li>`).join("");
+            const interestNoteHtml = h.interestNote ? `<div class="howto-note">🎨 ${h.interestNote}</div>` : "";
+            const culturalNoteHtml = h.culturalNote ? `<div class="howto-note">🏡 ${h.culturalNote}</div>` : "";
+            return `
+              <div class="howto-card">
+                <h4>${h.title || d.title}</h4>
+                <div class="howto-meta">${t("howto.days")}: ${days} · ${h.duration || d.duration}</div>
+                <p><strong>${t("howto.purpose")}:</strong> ${h.purpose || d.goal}</p>
+                ${materialsHtml ? `<p><strong>${t("howto.materials")}:</strong></p><ul>${materialsHtml}</ul>` : ""}
+                ${stepsHtml ? `<p><strong>${t("howto.steps")}:</strong></p><ol>${stepsHtml}</ol>` : ""}
+                ${h.parentScript ? `<p><strong>${t("howto.script")}:</strong> ${h.parentScript}</p>` : ""}
+                ${doHtml ? `<p><strong>${t("howto.do")}:</strong></p><ul>${doHtml}</ul>` : ""}
+                ${avoidHtml ? `<p><strong>${t("howto.avoid")}:</strong></p><ul>${avoidHtml}</ul>` : ""}
+                ${h.successIndicator ? `<p><strong>${t("howto.success")}:</strong> ${h.successIndicator}</p>` : ""}
+                ${h.reflectionQuestion ? `<p><strong>${t("howto.reflection")}:</strong> ${h.reflectionQuestion}</p>` : ""}
+                ${interestNoteHtml}
+                ${culturalNoteHtml}
+              </div>`;
+          })
+          .join("");
+      }
+
+      async function buildResults() {
+        // Saudi Verified Knowledge Base v1 — static-asset fetch only (no
+        // child/profile data leaves the browser). Safe to await even if
+        // already loaded/failed: loadKnowledgeBase() caches its promise and
+        // NEVER rejects, so this always resolves and the validated internal
+        // engine content is used as fallback on any load failure.
+        if (typeof GTPersonalization !== "undefined" && GTPersonalization.ready) {
+          await GTPersonalization.ready();
+        }
         const child = findChild(selectedAssessmentChildId);
         if (!child) return;
         const isAr = currentLang === "ar";
@@ -5415,18 +5599,12 @@
           .map((r) => `<li>${r}</li>`)
           .join("");
 
-        // evidence — case-relevant sources selected by EvidenceSelector,
-        // same markup shape (.evidence-list > .evidence-item > .src/.cite)
-        // as the original static version.
-        const renderEvidence = (containerId) => {
-          document.getElementById(containerId).innerHTML = plan.evidence
-            .map(
-              (e) =>
-                `<div class="evidence-item"><span class="src">${e.org}</span><span class="cite">${isAr ? e.ar : e.en}</span></div>`,
-            )
-            .join("");
-        };
-        renderEvidence("evidence-list");
+        // evidence — case-relevant sources selected by EvidenceSelector (or,
+        // when the Saudi Verified Knowledge Base loaded, by the stricter
+        // KB-provenance path in generatePersonalizedPlan) — same markup
+        // shape (.evidence-list > .evidence-item > .src/.cite) as the
+        // original static version, plus an optional caveat line.
+        renderEvidenceList("evidence-list", plan.evidence, isAr);
 
         // referral
         const showReferral = plan.showReferral;
@@ -5581,17 +5759,20 @@
             return `<li><strong>${a.day} — ${a.title}</strong> (${a.duration} · ${a.difficulty}) — ${a.goal}. <em>${materialsLabel}:</em> ${a.materials}. <em>${tipLabel}:</em> ${a.tip}</li>`;
           })
           .join("");
+        // "How to Do This Week's Activities" — one full parent instruction
+        // card per DISTINCT activity in planData.activities (the same
+        // 7-day plan array as the concise summary above), reading only the
+        // `howTo` field the engine already assembled. Repeats of the same
+        // activity (intentional progression re-use) are not printed twice —
+        // renderHowToActivities() collapses them into a single card listing
+        // every day it appears on.
+        renderHowToActivities("rep-howto", planData.activities, isAr);
         document.getElementById("rep-recs").innerHTML = planData.recs
           .map((r) => `<li>${r}</li>`)
           .join("");
         // rep-evidence reads from the SAME planData.evidence used in Results —
         // single source of truth, never recomputed here.
-        document.getElementById("rep-evidence").innerHTML = (planData.evidence || [])
-          .map(
-            (e) =>
-              `<div class="evidence-item"><span class="src">${e.org}</span><span class="cite">${isAr ? e.ar : e.en}</span></div>`,
-          )
-          .join("");
+        renderEvidenceList("rep-evidence", planData.evidence, isAr);
         document.getElementById("rep-referral-block").style.display =
           planData.showReferral ? "block" : "none";
         if (planData.showReferral)
