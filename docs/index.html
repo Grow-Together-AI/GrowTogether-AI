@@ -5195,27 +5195,46 @@
       });
 
       // ---- Chip inputs (reusable) ----
-      function setupChips(boxId, inputId, store) {
+      function addChipValue(boxId, inputId, store, val) {
+        val = val.trim();
+        if (!val || store.includes(val)) return;
         const box = document.getElementById(boxId);
+        const input = document.getElementById(inputId);
+        store.push(val);
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.innerHTML =
+          val + ` <button type="button" aria-label="Remove ${val}">×</button>`;
+        chip.querySelector("button").onclick = () => {
+          chip.remove();
+          store.splice(store.indexOf(val), 1);
+        };
+        box.insertBefore(chip, input);
+      }
+      function setupChips(boxId, inputId, store) {
         const input = document.getElementById(inputId);
         input.addEventListener("keydown", (e) => {
           if (e.key === "Enter" && input.value.trim()) {
             e.preventDefault();
-            const val = input.value.trim();
-            store.push(val);
-            const chip = document.createElement("span");
-            chip.className = "chip";
-            chip.innerHTML =
-              val +
-              ` <button type="button" aria-label="Remove ${val}">×</button>`;
-            chip.querySelector("button").onclick = () => {
-              chip.remove();
-              store.splice(store.indexOf(val), 1);
-            };
-            box.insertBefore(chip, input);
+            addChipValue(boxId, inputId, store, input.value);
             input.value = "";
           }
         });
+      }
+      // Root-cause fix for Defect 1: commits any text still sitting in the
+      // input (never confirmed with Enter) as one or more chips, split on
+      // English/Arabic commas. Called right before reading modalInterests/
+      // modalStrengths at Save time, so typed values are never silently lost.
+      function flushChipInput(boxId, inputId, store) {
+        const input = document.getElementById(inputId);
+        const leftover = input.value.trim();
+        if (!leftover) return;
+        leftover
+          .split(/[,،]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .forEach((val) => addChipValue(boxId, inputId, store, val));
+        input.value = "";
       }
       function clearChips(boxId, store) {
         store.length = 0;
@@ -6239,6 +6258,9 @@
           return;
         }
         const gradeText = document.getElementById("modal-grade").value;
+        // Defect 1 fix: commit any un-confirmed chip text before reading it.
+        flushChipInput("modal-interests-box", "modal-interests-input", modalInterests);
+        flushChipInput("modal-strengths-box", "modal-strengths-input", modalStrengths);
 
         if (modalMode === "edit" && modalEditingId) {
           const c = findChild(modalEditingId);
