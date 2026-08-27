@@ -854,6 +854,9 @@
         color: #8a5a0a;
         font-size: 14px;
       }
+      .referral h3 {
+        color: #7a5a15;
+      }
       .referral .disclaimer {
         margin-top: 12px;
         font-size: 12.5px;
@@ -935,6 +938,16 @@
         border-radius: var(--r-sm);
         padding: 8px 10px;
         margin: 8px 0 0;
+      }
+      .howto-weekly-tips {
+        background: var(--blue-tint);
+        border-color: transparent;
+      }
+      .howto-note-sub {
+        font-size: 12px;
+        color: var(--muted);
+        font-style: italic;
+        margin: 0 0 8px;
       }
 
       /* ---------------- REPORT ---------------- */
@@ -2478,15 +2491,12 @@
                 <ul class="rec-list" id="rep-recs"></ul>
               </div>
               <div
-                class="report-block card res-card referral"
+                class="report-block card res-card"
                 id="rep-referral-block"
-                style="display: none"
               >
                 <div class="res-head">
                   <div class="res-icon">ℹ️</div>
-                  <h3 style="color: #7a5a15" data-i18n="report.b7">
-                    8. Professional Recommendation
-                  </h3>
+                  <h3 data-i18n="report.b7">8. Additional Support</h3>
                 </div>
                 <p id="rep-referral"></p>
               </div>
@@ -4434,21 +4444,26 @@
           "report.b5": "5. Weekly Activities",
           "report.b5b": "6. How to Do This Week's Activities",
           "report.b6": "7. Parent Recommendations",
-          "report.b7": "8. Professional Recommendation",
+          "report.b7": "8. Additional Support",
           "report.b8": "9. Evidence Sources",
           "report.b9": "10. Next Review Date",
+          "report.noReferralNote":
+            "No additional professional support is indicated by the current information. Continue monitoring the child's progress and seek appropriate support if concerns become severe, persistent, affect daily functioning, or involve safety.",
           "report.evidenceNote":
             "This week's plan draws on the principles below. Step-by-step activity details are Grow Together AI's own evidence-informed adaptations, not verbatim clinical protocols from these sources.",
           "howto.materials": "Materials",
-          "howto.steps": "Step-by-Step",
-          "howto.script": "What Can I Say to My Child?",
-          "howto.do": "Parent — Do",
-          "howto.avoid": "Parent — Avoid",
-          "howto.success": "Success Indicator",
+          "howto.steps": "How to Do It",
+          "howto.script": "Try Saying",
+          "howto.do": "Helpful Parent Tips",
+          "howto.avoid": "Avoid",
+          "howto.success": "Look for This",
           "howto.reflection": "Reflection",
           "howto.days": "Days this week",
           "howto.purpose": "Purpose",
           "howto.progressionNote": "This week's progression for this activity:",
+          "howto.weeklyTips": "Helpful Tips for This Week",
+          "howto.weeklyTipsSub":
+            "This general guidance applies across several of this week's activities, so it's shown once here instead of on every card.",
           "report.name": "Name",
           "report.preparedFor": "Prepared for {name}",
           "report.age": "Age",
@@ -4858,21 +4873,26 @@
           "report.b5": "5. الأنشطة الأسبوعية",
           "report.b5b": "6. كيفية تنفيذ أنشطة هذا الأسبوع",
           "report.b6": "7. توصيات للوالدين",
-          "report.b7": "8. توصية احترافية",
+          "report.b7": "8. دعم إضافي",
           "report.b8": "9. المصادر العلمية",
           "report.b9": "10. تاريخ المراجعة القادمة",
+          "report.noReferralNote":
+            "لا تشير المعلومات الحالية إلى الحاجة لدعم مهني إضافي. يُنصح بمتابعة تقدّم الطفل وطلب الدعم المناسب إذا أصبحت المخاوف شديدة أو مستمرة أو أثّرت على الأداء اليومي أو تعلّقت بالسلامة.",
           "report.evidenceNote":
             "تعتمد خطة هذا الأسبوع على المبادئ الواردة أدناه. تفاصيل الأنشطة خطوة بخطوة هي صياغة تطبيقية مستنيرة بالأدلة من إعداد Grow Together AI، وليست بروتوكولًا سريريًا منقولًا حرفيًا من هذه المصادر.",
           "howto.materials": "الأدوات",
-          "howto.steps": "خطوة بخطوة",
-          "howto.script": "ماذا يمكنني أن أقول لطفلي؟",
-          "howto.do": "الوالد — افعل",
-          "howto.avoid": "الوالد — تجنّب",
-          "howto.success": "مؤشر النجاح",
+          "howto.steps": "طريقة التنفيذ",
+          "howto.script": "جرّب أن تقول",
+          "howto.do": "نصائح مفيدة للوالدين",
+          "howto.avoid": "تجنّب",
+          "howto.success": "علامات النجاح",
           "howto.reflection": "للتأمل",
           "howto.days": "أيام هذا الأسبوع",
           "howto.purpose": "الهدف",
           "howto.progressionNote": "تقدّم هذا النشاط هذا الأسبوع:",
+          "howto.weeklyTips": "نصائح مفيدة لهذا الأسبوع",
+          "howto.weeklyTipsSub":
+            "تنطبق هذه الإرشادات العامة على عدة أنشطة هذا الأسبوع، لذا نعرضها هنا مرة واحدة بدلاً من تكرارها في كل بطاقة.",
           "report.name": "الاسم",
           "report.preparedFor": "أُعِدّ من أجل {name}",
           "report.age": "العمر",
@@ -5481,6 +5501,46 @@
       // are listed once, with every day it appears on). Reads only from the
       // plan's own `howTo` field already assembled by the personalization
       // engine — no scoring/internal fields are read or shown here.
+      // Normalizes text for redundancy comparisons (Issue 3): lowercases,
+      // strips punctuation, collapses whitespace. Used only to decide what
+      // to SHOW in the PDF — never mutates the underlying data.
+      function normalizeForCompare(s) {
+        return (s || "")
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}\s]/gu, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      // Issue 3 fix: "Try Saying" should only appear when parentScript adds
+      // something meaningfully different from the step-by-step instructions
+      // — otherwise the PDF ends up printing the same sentence twice.
+      function isScriptRedundant(script, steps) {
+        const scriptNorm = normalizeForCompare(script);
+        if (!scriptNorm) return true;
+        return (steps || []).some((s) => {
+          const stepNorm = normalizeForCompare(s);
+          if (!stepNorm) return false;
+          if (stepNorm === scriptNorm) return true;
+          if (stepNorm.includes(scriptNorm) || scriptNorm.includes(stepNorm)) return true;
+          const a = new Set(scriptNorm.split(" ").filter(Boolean));
+          const b = new Set(stepNorm.split(" ").filter(Boolean));
+          if (!a.size || !b.size) return false;
+          let common = 0;
+          a.forEach((w) => { if (b.has(w)) common += 1; });
+          return common / Math.min(a.size, b.size) >= 0.8;
+        });
+      }
+
+      // Renders one parent-facing instruction card per DISTINCT activity
+      // used in the week (repeats of the same activity across multiple days
+      // are listed once, with every day it appears on). Issue 3 fix: parent
+      // Do/Avoid guidance that repeats identically across 2+ of this week's
+      // distinct activities is lifted OUT of the individual cards and shown
+      // once, above them, as "Helpful Tips for This Week" — each card then
+      // only lists what's actually specific to it. Reads only from the
+      // plan's own `howTo` field already assembled by the personalization
+      // engine — no scoring/internal fields are read or shown here.
       function renderHowToActivities(containerId, activities, isAr) {
         const dayLabelsByActivity = {};
         (activities || []).forEach((d) => {
@@ -5492,26 +5552,62 @@
           seen.add(d.activityId);
           return true;
         });
-        document.getElementById(containerId).innerHTML = cards
+
+        // Find Do/Avoid lines shared by 2+ distinct activities this week —
+        // these read as generic weekly guidance rather than activity-specific
+        // instruction, so they're worth surfacing once instead of per-card.
+        const countItems = (key) => {
+          const counts = new Map();
+          cards.forEach((d) => {
+            const items = (d.howTo && d.howTo[key]) || [];
+            new Set(items).forEach((item) => counts.set(item, (counts.get(item) || 0) + 1));
+          });
+          return counts;
+        };
+        const doCounts = countItems("parentDo");
+        const avoidCounts = countItems("parentAvoid");
+        const commonDo = cards.length > 1 ? [...doCounts.keys()].filter((k) => doCounts.get(k) >= 2) : [];
+        const commonAvoid = cards.length > 1 ? [...avoidCounts.keys()].filter((k) => avoidCounts.get(k) >= 2) : [];
+
+        const weeklyTipsHtml = commonDo.length || commonAvoid.length
+          ? `<div class="howto-card howto-weekly-tips">
+               <h4>${t("howto.weeklyTips")}</h4>
+               <p class="howto-note-sub">${t("howto.weeklyTipsSub")}</p>
+               ${commonDo.length ? `<p><strong>${t("howto.do")}:</strong></p><ul>${commonDo.map((x) => `<li>${x}</li>`).join("")}</ul>` : ""}
+               ${commonAvoid.length ? `<p><strong>${t("howto.avoid")}:</strong></p><ul>${commonAvoid.map((x) => `<li>${x}</li>`).join("")}</ul>` : ""}
+             </div>`
+          : "";
+
+        const cardsHtml = cards
           .map((d) => {
             const h = d.howTo || {};
             const days = (dayLabelsByActivity[d.activityId] || [d.day]).join(isAr ? "، " : ", ");
             const materialsArr = Array.isArray(h.materials) ? h.materials : [h.materials].filter(Boolean);
-            const stepsArr = Array.isArray(h.steps) ? h.steps : [h.steps].filter(Boolean);
-            const materialsHtml = materialsArr.map((m) => `<li>${m}</li>`).join("");
+            const stepsArr = (Array.isArray(h.steps) ? h.steps : [h.steps].filter(Boolean)).slice(0, 5);
             const stepsHtml = stepsArr.map((s) => `<li>${s}</li>`).join("");
-            const doHtml = (h.parentDo || []).map((x) => `<li>${x}</li>`).join("");
-            const avoidHtml = (h.parentAvoid || []).map((x) => `<li>${x}</li>`).join("");
+            // Compact "Duration + Materials" line rather than two separate
+            // labeled blocks.
+            const durationMaterials = [h.duration || d.duration, materialsArr.join(isAr ? "، " : ", ")]
+              .filter(Boolean)
+              .join(" · ");
+            // Card-specific Do/Avoid = whatever isn't already covered by the
+            // once-only "Helpful Tips for This Week" block above; Avoid is
+            // additionally capped to the most relevant couple of cautions.
+            const cardDo = (h.parentDo || []).filter((x) => !commonDo.includes(x));
+            const cardAvoid = (h.parentAvoid || []).filter((x) => !commonAvoid.includes(x)).slice(0, 2);
+            const doHtml = cardDo.map((x) => `<li>${x}</li>`).join("");
+            const avoidHtml = cardAvoid.map((x) => `<li>${x}</li>`).join("");
+            const showScript = h.parentScript && !isScriptRedundant(h.parentScript, stepsArr);
             const interestNoteHtml = h.interestNote ? `<div class="howto-note">🎨 ${h.interestNote}</div>` : "";
             const culturalNoteHtml = h.culturalNote ? `<div class="howto-note">🏡 ${h.culturalNote}</div>` : "";
             return `
               <div class="howto-card">
                 <h4>${h.title || d.title}</h4>
-                <div class="howto-meta">${t("howto.days")}: ${days} · ${h.duration || d.duration}</div>
-                <p><strong>${t("howto.purpose")}:</strong> ${h.purpose || d.goal}</p>
-                ${materialsHtml ? `<p><strong>${t("howto.materials")}:</strong></p><ul>${materialsHtml}</ul>` : ""}
+                <div class="howto-meta">${t("howto.days")}: ${days}</div>
+                ${h.purpose ? `<p><strong>${t("howto.purpose")}:</strong> ${h.purpose}</p>` : ""}
+                ${durationMaterials ? `<p class="howto-meta">${durationMaterials}</p>` : ""}
                 ${stepsHtml ? `<p><strong>${t("howto.steps")}:</strong></p><ol>${stepsHtml}</ol>` : ""}
-                ${h.parentScript ? `<p><strong>${t("howto.script")}:</strong> ${h.parentScript}</p>` : ""}
+                ${showScript ? `<p><strong>${t("howto.script")}:</strong> ${h.parentScript}</p>` : ""}
                 ${doHtml ? `<p><strong>${t("howto.do")}:</strong></p><ul>${doHtml}</ul>` : ""}
                 ${avoidHtml ? `<p><strong>${t("howto.avoid")}:</strong></p><ul>${avoidHtml}</ul>` : ""}
                 ${h.successIndicator ? `<p><strong>${t("howto.success")}:</strong> ${h.successIndicator}</p>` : ""}
@@ -5521,6 +5617,8 @@
               </div>`;
           })
           .join("");
+
+        document.getElementById(containerId).innerHTML = weeklyTipsHtml + cardsHtml;
       }
 
       async function buildResults() {
@@ -5773,11 +5871,23 @@
         // rep-evidence reads from the SAME planData.evidence used in Results —
         // single source of truth, never recomputed here.
         renderEvidenceList("rep-evidence", planData.evidence, isAr);
-        document.getElementById("rep-referral-block").style.display =
-          planData.showReferral ? "block" : "none";
-        if (planData.showReferral)
-          document.getElementById("rep-referral").textContent =
-            planData.referralText;
+        // Issue 4 fix — Additional Support is now ALWAYS a visible,
+        // sequentially-numbered section instead of being hidden when no
+        // referral is indicated (which previously caused the printed report
+        // to skip straight from "7." to "9."). The underlying
+        // ReferralSafetyEngine result/wording is completely unchanged —
+        // only the section's visibility and, for the no-referral case, its
+        // neutral filler copy are new.
+        const refBlock = document.getElementById("rep-referral-block");
+        refBlock.style.display = "block";
+        const refText = document.getElementById("rep-referral");
+        if (planData.showReferral) {
+          refBlock.classList.add("referral");
+          refText.textContent = planData.referralText;
+        } else {
+          refBlock.classList.remove("referral");
+          refText.textContent = t("report.noReferralNote");
+        }
         const dateLocale = isAr ? "ar-SA-u-nu-latn" : "en-US";
         document.getElementById("report-date").textContent =
           (isAr ? "تاريخ الإنشاء " : "Generated ") +

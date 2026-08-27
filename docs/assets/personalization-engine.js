@@ -926,6 +926,144 @@
     ar: { Easy: "سهل", Medium: "متوسط" },
   };
 
+  /* =====================================================================
+   * PARENT-FACING REPORT REFINEMENT (Issues 1 & 2)
+   *     Both are content-enrichment / presentation layers only — neither
+   *     touches CaseAnalyzer, DevelopmentalAnalyzer, NeedsPriorityEngine,
+   *     scoreActivity/scoreKbActivity/scoreAny, or referral logic. They run
+   *     strictly AFTER an activity has already been selected for a day.
+   * ===================================================================== */
+
+  // --- Issue 2: parent-facing titles for KB-native activities ------------
+  // KB-native titles follow an internal stage-labeling convention ("Notice
+  // & Name: X", "Practice Together: X", ...) that's useful for engine/
+  // progression bookkeeping but reads as technical to a parent. This layer
+  // derives a separate, warmer title from (stage + a short plain-language
+  // skill phrase for the domain) WITHOUT changing `activity.stage` itself
+  // (still used for progression). Legacy/interest-adapted activities
+  // already carry their own parent-authored titles (e.g. "Feelings Face
+  // Drawing") and are never touched here.
+  const STAGE_TITLE_TEMPLATE = {
+    introduction: { en: "Getting to Know {X}", ar: "التعرف على {X}" },
+    guidedPractice: { en: "Practicing {X} Together", ar: "التدرّب على {X} معًا" },
+    independentApplication: { en: "Trying {X} on Your Own", ar: "تجربة {X} بمفردك" },
+    reflection: { en: "Talking About {X}", ar: "الحديث عن {X}" },
+  };
+
+  const SKILL_PHRASE = {
+    attention: { en: "staying focused", ar: "التركيز" },
+    executiveFunction: { en: "planning steps", ar: "تنظيم الخطوات" },
+    emotionalRegulation: { en: "big feelings", ar: "المشاعر القوية" },
+    anxiety: { en: "worries", ar: "المخاوف" },
+    socialSkills: { en: "social skills", ar: "المهارات الاجتماعية" },
+    peerRelationships: { en: "friendships", ar: "الصداقات" },
+    confidence: { en: "confidence", ar: "الثقة بالنفس" },
+    communication: { en: "expressing yourself", ar: "التعبير عن النفس" },
+    reading: { en: "reading skills", ar: "مهارات القراءة" },
+    behavior: { en: "cooperation", ar: "التعاون" },
+    frustrationTolerance: { en: "trying again", ar: "المحاولة مجددًا" },
+    independence: { en: "doing it yourself", ar: "الاستقلالية" },
+    dailyRoutines: { en: "daily routines", ar: "الروتين اليومي" },
+    sleep: { en: "bedtime", ar: "وقت النوم" },
+    screenUse: { en: "screen time", ar: "وقت الشاشة" },
+    motivation: { en: "motivation", ar: "الحافز" },
+    responsibility: { en: "responsibility", ar: "المسؤولية" },
+    problemSolving: { en: "solving problems", ar: "حل المشكلات" },
+    resilience: { en: "bouncing back", ar: "المرونة" },
+    creativity: { en: "creative thinking", ar: "التفكير الإبداعي" },
+    empathy: { en: "kindness", ar: "اللطف" },
+  };
+
+  // Hand-authored overrides for the domains most directly exercised by the
+  // validated test cases (matching the requested example style closely).
+  // Every other domain safely falls back to the deterministic template
+  // above — no domain is ever left displaying a technical stage label.
+  const PARENT_FRIENDLY_TITLES = {
+    emotionalRegulation: {
+      introduction: { en: "Notice How You Feel", ar: "لاحظ شعورك" },
+      guidedPractice: { en: "Name the Feeling Together", ar: "سمِّيا الشعور معًا" },
+      independentApplication: { en: "Try Your Calm-Down Plan", ar: "جرّب خطة الهدوء بنفسك" },
+      reflection: { en: "Talk About Today's Feelings", ar: "تحدّثا عن مشاعر اليوم" },
+    },
+    frustrationTolerance: {
+      introduction: { en: "Notice When It's Hard", ar: "لاحظ متى يصعب الأمر" },
+      guidedPractice: { en: "Practice Trying Again", ar: "تدرّب على المحاولة مجددًا" },
+      independentApplication: { en: "Three Ways to Try Again", ar: "ثلاث طرق للمحاولة مجددًا" },
+      reflection: { en: "Talk About What Helped", ar: "تحدّثا عمّا ساعد" },
+    },
+    attention: {
+      introduction: { en: "Warm Up Your Focus", ar: "هيّئ تركيزك" },
+      guidedPractice: { en: "Practice Focusing Together", ar: "تدرّبا على التركيز معًا" },
+      independentApplication: { en: "Try Focusing on Your Own", ar: "جرّب التركيز بمفردك" },
+      reflection: { en: "Talk About Your Focus", ar: "تحدّثا عن تركيزك" },
+    },
+    executiveFunction: {
+      introduction: { en: "Break It Into Steps", ar: "قسّمها إلى خطوات" },
+      guidedPractice: { en: "Plan It Together", ar: "خطّطا لها معًا" },
+      independentApplication: { en: "Try Planning on Your Own", ar: "جرّب التخطيط بمفردك" },
+      reflection: { en: "Talk About Your Plan", ar: "تحدّثا عن خطتك" },
+    },
+    dailyRoutines: {
+      introduction: { en: "Get to Know Your Routine", ar: "تعرّف على روتينك" },
+      guidedPractice: { en: "Practice the Routine Together", ar: "تدرّبا على الروتين معًا" },
+      independentApplication: { en: "Try the Routine on Your Own", ar: "جرّب الروتين بمفردك" },
+      reflection: { en: "Talk About the Routine", ar: "تحدّثا عن الروتين" },
+    },
+  };
+
+  function parentFriendlyKbTitle(engineDomainId, stage, lang) {
+    const override = PARENT_FRIENDLY_TITLES[engineDomainId] && PARENT_FRIENDLY_TITLES[engineDomainId][stage];
+    if (override) return override[lang];
+    const domainMeta = DOMAIN_BY_ID[engineDomainId];
+    const skill = (SKILL_PHRASE[engineDomainId] || {
+      en: domainMeta ? domainMeta.en.toLowerCase() : "this skill",
+      ar: domainMeta ? domainMeta.ar : "هذه المهارة",
+    })[lang];
+    const tmpl = STAGE_TITLE_TEMPLATE[stage] || STAGE_TITLE_TEMPLATE.introduction;
+    return tmpl[lang].replace("{X}", skill);
+  }
+
+  // --- Issue 1: enrich thin legacy How-To content -------------------------
+  // When the chosen activity is a legacy/interest-adapted one whose how-to
+  // content is thin (fewer than 2 steps, or no parent do/avoid guidance at
+  // all), borrow the missing implementation detail from the best-matching
+  // KB activity in the SAME domain, closest pedagogical stage available,
+  // and closest age range — never a different domain, never invented text.
+  // The activity's own personalized title/purpose/duration are always kept
+  // untouched, so e.g. "Feelings Face Drawing" keeps its identity while
+  // gaining complete step-by-step guidance. Purely additive to the day's
+  // `howTo` object; does not touch scoring, classification, or referral.
+  function enrichLegacyHowTo(howToObj, needDomain, profile, lang) {
+    const stepsCount = Array.isArray(howToObj.steps) ? howToObj.steps.length : 0;
+    const hasDo = Array.isArray(howToObj.parentDo) && howToObj.parentDo.length > 0;
+    const hasAvoid = Array.isArray(howToObj.parentAvoid) && howToObj.parentAvoid.length > 0;
+    const incomplete = stepsCount < 2 || (!hasDo && !hasAvoid);
+    if (!incomplete) return howToObj;
+
+    const pool = KB_ACTIVITIES_BY_ENGINE_DOMAIN[needDomain] || [];
+    if (!pool.length) return howToObj; // KB not loaded / domain not covered — leave as-is, no crash
+
+    const sameStage = pool.filter((a) => a.stage === howToObj.stage);
+    const candidates = sameStage.length ? sameStage : pool;
+    const scored = candidates
+      .map((a) => ({ a, dist: Math.abs(a.ageRange[0] - profile.age) + Math.abs(a.ageRange[1] - profile.age) }))
+      .sort((x, y) => x.dist - y.dist || (x.a.id < y.a.id ? -1 : 1)); // deterministic
+
+    const source = scored[0] && scored[0].a._kbRaw;
+    if (!source) return howToObj;
+
+    return Object.assign({}, howToObj, {
+      materials: howToObj.materials && howToObj.materials.length ? howToObj.materials : source.materials[lang],
+      steps: stepsCount < 2 ? source.steps[lang] : howToObj.steps,
+      parentScript: howToObj.parentScript || source.parentScript[lang],
+      parentDo: hasDo ? howToObj.parentDo : source.parentDo[lang],
+      parentAvoid: hasAvoid ? howToObj.parentAvoid : source.parentAvoid[lang],
+      successIndicator: howToObj.successIndicator || source.successIndicator[lang],
+      reflectionQuestion: howToObj.reflectionQuestion || source.reflectionQuestion[lang],
+      enrichedFromKbId: source.id, // internal-only provenance marker, never rendered to parents
+    });
+  }
+
   function PlanSelector(priorities, strengths, profile, lang, saudiContext) {
     const interestTags = canonicalInterestTags(profile.interests);
     const daySchedule = buildDaySchedule(priorities);
@@ -957,6 +1095,12 @@
       usage[chosen.activity.id] = (usage[chosen.activity.id] || 0) + 1;
       domainOccurrence[needDomain] = occIndex + 1;
       const adapted = pickActivityAdaptationUnified(chosen.activity, interestTags);
+      // Issue 2 fix — KB-native activities get a separate parent-facing
+      // title (stage id is untouched for engine/progression purposes).
+      // Legacy/interest-adapted activities keep their own authored title.
+      const displayTitle = chosen.activity._kb
+        ? { en: parentFriendlyKbTitle(needDomain, chosen.activity.stage, "en"), ar: parentFriendlyKbTitle(needDomain, chosen.activity.stage, "ar") }
+        : adapted.title;
       const isYoung = profile.age <= 8;
       const durationMin = isYoung ? chosen.activity.duration.min : chosen.activity.duration.max;
       const difficultyKey = chosen.activity.difficultyBase === "easy" ? "Easy" : (isYoung ? "Easy" : "Medium");
@@ -969,7 +1113,7 @@
       // pass-through exactly as before.
       const kbTags = (chosen.activity._kbRaw && chosen.activity._kbRaw.saudiContextTags) || [];
       const culturallyAdapted = saudiContext.adapt(
-        { title: adapted.title[lang], materials: adapted.materials[lang], tip: adapted.parentInstructions[lang] },
+        { title: displayTitle[lang], materials: adapted.materials[lang], tip: adapted.parentInstructions[lang] },
         { domain: needDomain, lang, age: profile.age, saudiContextTags: kbTags },
       );
 
@@ -1001,8 +1145,12 @@
         evidenceSourceIds: raw ? raw.evidenceSourceIds : null,
         contentStatus: raw ? raw.contentStatus : "legacy_authored_activity",
         // Full parent-facing instruction card for the report's
-        // "How to Do This Week's Activities" section.
-        howTo: {
+        // "How to Do This Week's Activities" section. Issue 1 fix: when
+        // this is a legacy/interest-adapted activity with thin content,
+        // enrichLegacyHowTo() fills in missing implementation detail from
+        // the closest-matching KB activity in the SAME domain — it never
+        // changes the title/purpose/duration above.
+        howTo: enrichLegacyHowTo({
           title: culturallyAdapted.title,
           purpose: chosen.activity.goal[lang],
           duration: lang === "ar" ? `${durationMin} دقيقة` : `${durationMin} min`,
@@ -1017,7 +1165,7 @@
           interestNote: interestNoteLocalized,
           culturalNote: culturallyAdapted.culturalNote || null,
           stage: chosen.activity.stage,
-        },
+        }, needDomain, profile, lang),
       };
     });
 
